@@ -42,7 +42,7 @@ setup(
     name = "PyNN",
     version = "0.7.6dev",
     package_dir={'pyNN': 'src'},
-    packages = ['pyNN','pyNN.nest', 'pyNN.pcsim', 'pyNN.neuron', 'pyNN.brian',
+    packages = ['pyNN','pyNN.nest', 'pyNN.pcsim', 'pyNN.neuron', 'pyNN.brian','pyNN.nineml',
                 'pyNN.recording', 'pyNN.standardmodels', 'pyNN.descriptions',
                 'pyNN.nest.standardmodels', 'pyNN.pcsim.standardmodels',
                 'pyNN.neuron.standardmodels', 'pyNN.brian.standardmodels'],

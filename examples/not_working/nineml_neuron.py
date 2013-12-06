@@ -6,9 +6,8 @@ Example of using a cell type defined in 9ML with pyNN.neuron
 import sys
 from os.path import abspath, realpath, join
 import nineml
-root = abspath(join(realpath(nineml.__path__[0]), "../../.."))
-sys.path.append(join(root, "lib9ml/python/examples/AL"))
-sys.path.append(join(root, "code_generation/nmodl"))                
+root = realpath(nineml.__path__[0])
+sys.path.append(join(root, "examples/AL/sample_components"))            
 leaky_iaf = __import__("leaky_iaf")
 coba_synapse = __import__("coba_synapse")
 import pyNN.neuron as sim

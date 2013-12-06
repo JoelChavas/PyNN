@@ -11,7 +11,7 @@ exec("import pyNN.%s as sim" % simulator)
 
 comm = MPI.COMM_WORLD
 
-sim.setup(debug=True)
+node = sim.setup(debug=True)
 
 print "\nThis is node %d (%d of %d)" % (sim.rank(), sim.rank()+1, sim.num_processes())
 assert comm.rank == sim.rank()

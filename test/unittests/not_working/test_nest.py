@@ -1,8 +1,7 @@
 from mock import Mock
 try:
     import nest
-    from pyNN.nest import Population
-    from pyNN.nest.cells import NativeCellType
+    import pyNN.nest as sim
 except ImportError:
     nest = False
     NativeCellType = Mock

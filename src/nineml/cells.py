@@ -6,7 +6,7 @@ Standard cells for 9ML
 """
 
 from pyNN import standardmodels
-import pyNN.cells
+from pyNN.standardmodels import cells
 import nineml.user_layer as nineml
 from utility import build_parameter_set, catalog_url, map_random_distribution_parameters
 
@@ -47,7 +47,7 @@ class CellTypeMixin(object):
                     parameters=build_parameter_set(self.synaptic_mechanism_parameters[synapse_type]))
 
 
-class IF_curr_exp(pyNN.cells.IF_curr_exp, CellTypeMixin):
+class IF_curr_exp(cells.IF_curr_exp, CellTypeMixin):
     """Leaky integrate and fire model with fixed threshold and
     decaying-exponential post-synaptic current. (Separate synaptic currents for
     excitatory and inhibitory synapses."""
@@ -77,7 +77,7 @@ class IF_curr_exp(pyNN.cells.IF_curr_exp, CellTypeMixin):
     }
 
 
-class IF_cond_exp(pyNN.cells.IF_cond_exp, CellTypeMixin):
+class IF_cond_exp(cells.IF_cond_exp, CellTypeMixin):
    
     translations = standardmodels.build_translations(
         ('tau_m',      'membraneTimeConstant'),
@@ -106,7 +106,7 @@ class IF_cond_exp(pyNN.cells.IF_cond_exp, CellTypeMixin):
     }
 
 
-class IF_cond_alpha(pyNN.cells.IF_cond_exp, CellTypeMixin):
+class IF_cond_alpha(cells.IF_cond_exp, CellTypeMixin):
    
     translations = standardmodels.build_translations(
         ('tau_m',      'membraneTimeConstant'),
@@ -135,7 +135,7 @@ class IF_cond_alpha(pyNN.cells.IF_cond_exp, CellTypeMixin):
     }
     
 
-class SpikeSourcePoisson(pyNN.cells.SpikeSourcePoisson, CellTypeMixin):
+class SpikeSourcePoisson(cells.SpikeSourcePoisson, CellTypeMixin):
     
     translations = standardmodels.build_translations(
         ('start',    'onset'),
