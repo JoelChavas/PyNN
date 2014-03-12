@@ -15,7 +15,7 @@ import logging
 import tempfile
 
 # common PyNN modules
-from pyNN import common
+from pyNN import common, standardmodels
 from pyNN.connectors import *
 from pyNN.recording import *
 from pyNN.random import NumpyRNG
@@ -32,7 +32,8 @@ from electrodes import PeriodicCurrentSource, FG_ALLOWED_PERIODS
 
 
 # utility modules
-from documentation import _default_args
+from documentation import _default_args, _default_extra_params, \
+                        _hardware_args, _default_extra_params_ess
 
 # heidelberg specific mapping modules
 
@@ -80,7 +81,7 @@ _globalRNG = NumpyRNG().rng
 ## flag to check if the setup() method has been called already
 _calledSetup = False
 ## use executable system simulation instead of real hardware
-_useSystemSim = False
+_useSystemSim = True
 ## flag to check, whether the SystemC simulation has already been intialized, which can happen only once.
 _initializedSystemC = False
 ## flag to check, whether the SystemC simulation has already been run, which can happen only once.
@@ -181,6 +182,299 @@ def _set_speedup_factor(speedup):
 # make sure all models are on the same time base
 _set_speedup_factor(_speedupFactor)
 
+def _set_trafo_params(extra_params):
+    """
+    sets the parameter range and trafo settings from the extra_params.
+    to be called from setup()
+    Must be called before _init_preprocessor (for _useSmallCap)
+    """
+    global _useSmallCap
+    import range_checker
+    # check if we ignore the ranges of the hw parameters
+    if 'ignoreHWParameterRanges' in extra_params.keys():
+        if not isinstance(extra_params['ignoreHWParameterRanges'], bool):
+            raise TypeError, 'ERROR: pyNN.setup: argument ignoreHWParameterRanges must be of type bool!'
+        range_checker._ignoreHWParameterRanges = extra_params['ignoreHWParameterRanges']
+
+    # check if we shall use the small capacitance
+    if 'useSmallCap' in extra_params.keys():
+        if not isinstance(extra_params['useSmallCap'], bool):
+            raise TypeError, 'ERROR: pyNN.setup: argument useSmallCap must be of type bool!'
+        if extra_params['useSmallCap'] == True:
+            # if yes, we have to scale the parameter ranges of neurons and synapses.
+            for model in [EIF_cond_exp_isfa_ista,IF_cond_exp]:
+                model.scaleParameterRangesCap(SMALL_HW_CAP, BIG_HW_CAP)
+        _useSmallCap = extra_params['useSmallCap']
+        
+def _create_temp_folder(extra_params):
+    """
+    creates tmp folder for ess simulation data
+    looks for param 'tempFolder' in extra params
+    if it exists, it is used as temporary folder
+    otherwise a  folder under /tmp is created
+    """
+    global _tempFolder
+    global _deltempFolder
+    # check if name for temporary folder is specified by user
+    if 'tempFolder' in extra_params.keys():
+        _tempFolder = extra_params['tempFolder']
+        # if folder already exists, clean it
+        if os.access(_tempFolder, os.F_OK):
+            import shutil
+            shutil.rmtree(_tempFolder)
+        os.makedirs(_tempFolder)
+        _deltempFolder = False
+    else:
+        import tempfile
+        _tempFolder = tempfile.mkdtemp(prefix='FacetsHW')
+    toLog(DEBUG0, "Created folder " + str(_tempFolder) + " for temporary files needed by PyNN and Systemsim")
+
+def _init_preprocessor(extra_params):
+    """
+    initialize preprocessor
+    """
+    global _hardware_list
+    global _preprocessor
+    global _rng_seeds
+    global _interactiveMappingMode
+    global _interactiveMappingModeGUI
+    global _experimentName
+    assert _preprocessor
+
+    def user_or_default(param, user=extra_params, default=_default_extra_params, log=False):
+        if user.has_key(param):
+            val = user[param]
+            assert isinstance(val, type(default[param])) # check for right type
+        else:
+            val = default[param]
+        if log:
+            toLog(INFO, '%s is set to %s' % (param, str(val)))
+        return val
+
+    _interactiveMappingMode = user_or_default('interactiveMappingMode')
+    _interactiveMappingModeGUI = user_or_default('interactiveMappingModeGUI')
+    _experimentName = user_or_default('experimentName')
+    _mapping_quality_weights = user_or_default('mappingQualityWeights')
+
+# FIXME -- ME: find a more elegant way for the conversion
+    weigthdict = dict(_mapping_quality_weights[0])
+    weightinput = mappingutilities.mapStringFloat()
+    weightinput['G_HW'] = weigthdict['G_HW']
+    weightinput['G_PR'] = weigthdict['G_PR']
+    weightinput['G_T'] = weigthdict['G_T']
+    _preprocessor.setMappingQualityWeights(weightinput)
+
+    # check if hwinit filename is specified by user
+    if 'hwinitFilename' in extra_params.keys():
+        err_str = "pynn.setup(): parameter 'hwinitFilename' is not supported anymore"
+        err_str += "\nuse *pynn.setup(hardware=<X>)' to specify your hardware setup"
+        raise APIChangeError(err_str)
+
+    # initialize the preprocessor
+    _preprocessor.setRandomSeed(_rng_seeds[0])
+
+    default_extra_params = _default_extra_params
+    if _useSystemSim:
+        default_extra_params = _default_extra_params_ess
+    elif (len(_hardware_list) > 1):
+        default_extra_params = _default_extra_params_multiwafer
+
+    _preprocessor.setAlgoInitFileName(user_or_default('algoinitFilename', default=default_extra_params))
+    _preprocessor.setJSONPathName(user_or_default('jsonPathname', default=default_extra_params))
+
+    _preprocessor.setDatabaseHost(user_or_default('databaseHost'))
+    _preprocessor.setDatabasePort(user_or_default('databasePort'))
+    _preprocessor.setIgnoreDatabase(user_or_default('ignoreDatabase'))
+    _preprocessor.setInteractiveMapping(_interactiveMappingMode)
+
+    _mappingStrategy = user_or_default('mappingStrategy')
+    mappingStrategyOptions = ['valid','normal','best','user']
+    if _mappingStrategy in mappingStrategyOptions:
+        _preprocessor.setMappingStrategy(_mappingStrategy)
+    else :
+        raise TypeError("Value for mappingStrategy is: " + _mappingStrategy + " but must be one of: " + str(mappingStrategyOptions))
+
+    # when using the ESS: make sure there is not more than one Wafer
+    if extra_params.has_key("useSystemSim"):
+        if extra_params["useSystemSim"]:
+            assert(len(_hardware_list) == 1), "When using the ESS, there can be maximally 1 hardware setup"
+
+    # if hicannsMax is spefied, check if valid and set it, otherwise use the default
+    if extra_params.has_key('hicannsMax'):
+        hicannsMax = extra_params['hicannsMax']
+        _default_args['hicannsMax'].check(hicannsMax)
+        _preprocessor.setHicannsMax(hicannsMax)
+
+    # settings for each wafer / vertical setup
+    used_wafer_ids = []
+    for hardware in _hardware_list:
+        assert isinstance(hardware, dict)
+        assert hardware.has_key("wafer_id") # in each 'hardware' dictionary, there must be the wafer_id
+        wafer_id = hardware["wafer_id"]
+        if wafer_id in used_wafer_ids:
+            raise Exception("Hardware setup with wafer_id " + wafer_id + "already used in list of wafer setups")
+        else:
+            used_wafer_ids.append(wafer_id)
+        if hardware.has_key("hicannIndices"):
+            hicannIndices = hardware["hicannIndices"]
+            _hardware_args["hicannIndices"].check(hicannIndices)
+            _preprocessor.setHicannIndicesForWafer(wafer_id, list_to_vectorInt(hicannIndices))
+    
+    _preprocessor.setMaxSynapseLoss(user_or_default('maxSynapseLoss'))
+    _preprocessor.setMaxNeuronLoss(user_or_default('maxNeuronLoss'))
+    _preprocessor.setHardwareNeuronSize(user_or_default('hardwareNeuronSize'))
+    # check if hwinit filename is specified by user
+    if 'maxNeuronCountPerAnnCore' in extra_params.keys():
+        err_str = "pynn.setup(): parameter 'maxNeuronCountPerAnnCore' is not supported anymore"
+        err_str += "\nuse parameter 'hardwareNeuronSize' instead."
+        err_str += "\nHint: the following relation holds: hardwareNeuronSize=512/maxNeuronCountPerAnnCore"
+        raise APIChangeError(err_str)
+
+    # now create the hwmodel
+    _preprocessor.Initialize()
+
+
+def _insert_global_hw_params(extra_params):
+    global _preprocessor
+    global _graphModelGlobalHardwareParameters
+    global _speedupFactor
+    global _dt
+    global _useSmallCap
+    global _useSystemSim
+
+    _graphModelGlobalHardwareParameters = _preprocessor.HWModelInsertGlobalParameterSet('GlobalParameters')
+
+    # insert speedup factor information
+    _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"speedupFactor",str(_speedupFactor))
+    toLog(DEBUG0, "Inserted global parameter speedupFactor " + str(_speedupFactor) + " into HWModel.")
+
+    # insert capacitor choice information
+    _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"useSmallCap",str(int(_useSmallCap)))
+    toLog(DEBUG0, "Inserted global parameter useSmallCap" + str(int(_useSmallCap)) + " into HWModel.")
+
+    if _useSystemSim :
+        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"use_systemsim",str(int(_useSystemSim)))
+
+    if extra_params.has_key('ess_params'):
+        ess_params = extra_params['ess_params']
+        if 'weightDistortion' in ess_params.keys():
+            weight_distortion = ess_params['weightDistortion']
+            if not isinstance(weight_distortion, float):
+                raise TypeError("Value for weightDistortion must be of type float")
+            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weight_distortion",str(weight_distortion))
+            toLog(DEBUG0, "Synaptic weights on the ESS are distorted by " + str(weight_distortion))
+        if 'pulseStatisticsFile' in ess_params.keys():
+            pulse_statistics_file = ess_params['pulseStatisticsFile']
+            if not isinstance(pulse_statistics_file, str):
+                raise TypeError("Value for pulseStatisticsFile must be of type str")
+            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"pulse_statistics_file",pulse_statistics_file)
+            toLog(DEBUG0, "ESS pulse statistics are written to file " + pulse_statistics_file)
+        if 'perfectSynapseTrafo' in ess_params.keys():
+            perfect_synapse_trafo = ess_params['perfectSynapseTrafo']
+            if not isinstance(perfect_synapse_trafo, bool):
+                raise TypeError("Value for perfectSynapseTrafo must be of type bool")
+            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"perfect_synapse_trafo",str(int(perfect_synapse_trafo)))
+            if perfect_synapse_trafo:
+                toLog(DEBUG0, "Using a perfect synaptic weight transformation with the ESS")
+                # change weight ranges to be arbitrary:
+                for model in [EIF_cond_exp_isfa_ista,IF_cond_exp]:
+                    model.parameter_ranges['weight']= (0.,float('inf'))
+        if ess_params.has_key('hardwareSetup'):
+            err_str = "pyNN.setup(): parameter 'hardwareSetup' in 'ess_params' is not supported anymore."
+            err_str += "\nInstead of \n\t'pynn.setup(ess_params={'hardwareSetup':'small'})'"
+            err_str += "\nuse\n\t'pynn.setup(hardware=pynn.hardwareSetup['small'])'"
+            raise APIChangeError(err_str)
+
+    if 'programFloatingGates' in extra_params.keys():
+        programFG = None
+        programFGoptions = ['never','once','always']
+        if isinstance(extra_params['programFloatingGates'], bool):
+            programFG = "always" if extra_params['programFloatingGates'] else "never"
+            print "REMARK: the options for setup parameter 'programFloatingGates' have changed."
+            print "New options are ['never','once','always']."
+            print "'False' will be treated as 'never' and 'True' as 'always'"
+            print "With option 'once' the FGs are only programmed once, when run() is called multiple times"
+        elif extra_params['programFloatingGates'] in programFGoptions:
+            programFG = extra_params['programFloatingGates']
+        else:
+            raise TypeError("Value for programFloatingGates must be one of: " + programFGoptions)
+        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"programFloatingGates", programFG)
+        toLog(DEBUG0, "If using the real hardware, programFloatingGates equals " + programFG)
+
+    if 'weightBoost' in extra_params.keys():
+        if not isinstance(extra_params['weightBoost'], float):
+            raise TypeError("Value for weightBoost must be of type float")
+        if  extra_params['weightBoost'] < 0. or extra_params['weightBoost'] > 5.:
+            raise ParameterValueOutOfRangeError('weightBoost', extra_params['weightBoost'], (0.,5.))
+        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weightBoost",str(extra_params['weightBoost']))
+        toLog(DEBUG0, "If using the real hardware, all weights(V_gmax) are boosted by " + str(extra_params['weightBoost']) )
+
+    # For virtual hardware: simulation time step is used as integration time step in systemC
+    if _preprocessor.virtualHardwareAvailable():
+        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"timestep",str(_dt))
+        toLog(DEBUG0, "Inserted global parameter timestep " + str(_dt) + " into HWModel.")
+
+
+def _init_mapping_statistics(extra_params):
+    """
+    parses the mapping statistics related parameters from extra params
+    and initializes the statistics instance, if needed.
+    Must be called after initialization of preprocessor and models.
+    """
+    global _interactiveMappingMode
+    global _mappingStatisticsFile
+    global _fullConnectionMatrixFile
+    global _realizedConnectionMatrixFile
+    global _lostConnectionMatrixFile
+    global _statistics
+    global _mapper
+    
+    statistics_needed = False; # flag indicating whether statistics are needed
+
+    if _interactiveMappingMode:
+        toLog(INFO, 'PyNN: Mapping will be interactive')
+        statistics_needed = True
+        
+    if 'mappingStatisticsFile' in extra_params.keys() and not extra_params['mappingStatisticsFile'] == None :
+        _mappingStatisticsFile = extra_params['mappingStatisticsFile']
+        logstring = 'Mapping Statistics are written to: ./mapping_statistics/'+_mappingStatisticsFile
+        toLog(INFO,logstring)
+        statistics_needed = True
+
+    if 'fullConnectionMatrixFile' in extra_params.keys():
+        _fullConnectionMatrixFile = extra_params['fullConnectionMatrixFile']
+        statistics_needed = True
+        
+    if 'realizedConnectionMatrixFile' in extra_params.keys():
+        _realizedConnectionMatrixFile = extra_params['realizedConnectionMatrixFile']
+        statistics_needed = True
+        
+    if 'lostConnectionMatrixFile' in extra_params.keys():
+        _lostConnectionMatrixFile = extra_params['lostConnectionMatrixFile']
+        statistics_needed = True
+
+    # if statistics are requested initialize statistics class
+    if statistics_needed:
+        _statistics = mapping.statistics()
+        _statistics.SetHWModel(_mapper.GetHWModel())
+        _statistics.SetBioModel(_mapper.GetBioModel())
+        _statistics.Initialize()
+
+
+# =============================================================================
+#   Utility low-level functions
+# =============================================================================
+
+def list_to_vectorInt(lst):
+    """
+    converts a python list into a boost python wrapped stl vector of ints
+    """
+    assert isinstance(lst,list)
+    rv = mappingutilities.vectorInt()
+    rv.extend(lst)
+    return rv
+
+
 # =============================================================================
 #   Utility functions and classes
 # =============================================================================
@@ -201,14 +495,14 @@ record = common.build_record(simulator)
 record_v = lambda source, filename: record(['v'], source, filename)
 record_gsyn = lambda source, filename: record(['gsyn_exc', 'gsyn_inh'], source, filename)
 
+# ==============================================================================
+#   Functions for simulation set-up and control
+# ==============================================================================
+
 run, run_until = common.build_run(simulator)
 run_for = run
 
 reset = common.build_reset(simulator)
-
-# ==============================================================================
-#   Functions for simulation set-up and control
-# ==============================================================================
 
 def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     """!
@@ -396,7 +690,7 @@ setup.__doc__ = setup.__doc__.format(kwargs=_default_args.pprint(indent=8))
 
 def list_standard_models():
     """Return a list of all the StandardCellType classes available for this simulator."""
-    return [obj.__name__ for obj in globals().values() if isinstance(obj, type) and issubclass(obj, StandardCellType)]
+    return [obj.__name__ for obj in globals().values() if isinstance(obj, type) and issubclass(obj, standardmodels.StandardCellType)]
 
 
 def end(compatible_output=True):

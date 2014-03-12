@@ -134,10 +134,11 @@ class IF_cond_exp(cells.IF_cond_exp, HardwareNeuronRangeChecker):
     # hardware capacitance of HICANN
     c_hw = BIG_HW_CAP
 
-    def __init__(self,parameters):
-        cells.IF_cond_exp.__init__(self,parameters)
-        checked_params = self.reverse_translate(self.parameters)
-        self.checkParameterRanges(checked_params)
+    def __init__(self,parameters=None):
+        #XXX this check on the reverse_translate function?
+        if parameters:
+            checked_params = self.reverse_translate(parameters)
+            self.checkParameterRanges(checked_params)
 
 supportedNeuronTypes.append(IF_cond_exp)
 
