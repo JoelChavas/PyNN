@@ -10,6 +10,7 @@ This simulator implements the PyNN API, for hardware and hardware simulators.
 # imports
 #================================================================
 
+import time
 import logging
 import tempfile
 
@@ -226,9 +227,164 @@ def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
 {kwargs}
     """
     # REMARK: the doc for the kwargs is appended to existing docstring direclty after the function definition 
+    global _hardware_list
+    global _useSystemSim
+    global _initializedSystemC
+    global _preprocessor
+    global _mapper
+    global _postprocessor
+    global _configurator
+    global _neuronsChanged
+    global _synapsesChanged
+    global _connectivityChanged
+    global _inputChanged
+    global _externalInputs
+    global _calledSetup
+    global _dt
+    global _rng_seeds
+    global _systemSimTimeStepInPS
+    global _speedupFactor
+    global _tempFolder
+    global toLog
+    global ERROR
+    global WARNING
+    global INFO
+    global DEBUG0
+    global DEBUG1
+    global DEBUG2
+    global DEBUG3
+    global _logfile
+    global _loglevel
+    global _setupstart
+        
+    _setupstart = time.time()
     
     common.setup(timestep, min_delay, max_delay, **extra_params)
     simulator.state.clear()
+    
+    # start of specific setup
+    
+    if extra_params.has_key('hardware'):
+        _hardware_list = extra_params['hardware']
+    else:
+        _hardware_list = _default_extra_params['hardware']
+
+    if 'loglevel' in extra_params.keys():
+        _loglevel = extra_params['loglevel']
+    else:
+        _loglevel = 1
+
+    if 'logfile' in extra_params.keys():
+        _logfile = extra_params['logfile']
+    else: 
+        _logfile = 'logfile.txt'
+
+    global logger
+    logger = mapping.createLogger(_loglevel, _logfile)
+
+    _preprocessor = mapping.preprocessor()
+    _mapper = mapping.mapper()
+    _postprocessor = mapping.postprocessor()
+
+    # check for random number generator seed
+    if 'rng_seeds' in extra_params.keys():
+        _rng_seeds = extra_params['rng_seeds']
+        _globalRNG.seed(extra_params['rng_seeds'][0])
+
+    # print the available hardware version
+    if _preprocessor.hardwareAvailable():
+        toLog(INFO, 'Neuromorphic hardware is of type BrainSales HMF!')
+    else:
+        toLog(INFO, 'The assumed neuromorphic hardware is of type BrainScales HMF, but a real device is not available!')
+
+    if _preprocessor.virtualHardwareAvailable():
+        toLog(INFO, 'A virtual hardware, i.e. an executable system simulation, is available!')
+
+    # check if system simulation shall be used
+    if 'useSystemSim' in extra_params.keys():
+        if not isinstance(extra_params['useSystemSim'], bool):
+            raise TypeError, 'ERROR: pyNN.setup: argument useSystemSim must be of type bool!'
+        _useSystemSim = extra_params['useSystemSim']
+        if not _preprocessor.virtualHardwareAvailable() and _useSystemSim : 
+            raise Exception("ERROR: Argument 'useSystemSim' of command setup() is set to True, but no virtual hardware is available!")
+        if _useSystemSim :
+            toLog(INFO, 'A virtual, i.e. purely simulated hardware system is used instead of a real device!')
+
+    # check if speedup factor of the system is specified by user
+    if 'speedupFactor' in extra_params.keys():
+        # if yes, we have to scale the parameter ranges of neurons and synapses and update the the global parameter _speedupFactor
+        _set_speedup_factor(extra_params['speedupFactor'])
+
+    _set_trafo_params(extra_params)
+
+    # set all changed-flags to true
+    _neuronsChanged = True
+    _synapsesChanged = True
+    _connectivityChanged = True
+    _inputChanged = True
+
+    # the time step: for membrane traces used as sampling interval, for system simulation as integration time step
+    _dt = timestep
+    simulator._dt = timestep
+    simulator.state._dt = timestep
+
+    # create containers for input sources
+    _externalInputs = []
+
+    # create temp folder
+    _create_temp_folder(extra_params)
+
+    '''
+    SETUP THE MAPPING PROCESS 1) HW MODEL
+    '''
+
+    _init_preprocessor(extra_params)
+
+    # initialize the mapper
+    _mapper.SetHWModel(_preprocessor.GetHWModel())
+    _mapper.SetBioModel(_preprocessor.GetBioModel())
+    _mapper.Initialize()
+
+    # initialize the postprocessor
+    _postprocessor.SetHWModel(_mapper.GetHWModel())
+    _postprocessor.SetBioModel(_mapper.GetBioModel())
+    _postprocessor.Initialize()
+
+    _insert_global_hw_params(extra_params)
+
+    # create and initialize the hardware configuration controller
+    # if we are using the ESS, the configurator can be initialized only once, as the SystemC kernel can not be reset
+    if _useSystemSim:
+        if _initializedSystemC:
+            raise Exception("ERROR: The System Simulation can be started only once per python program. Hence multiple calls of function 'setup()' are not possible.")
+        else: _initializedSystemC = True
+    _configurator = mapping.stage2configurator()
+
+    for hardware in _hardware_list:
+        assert isinstance(hardware, dict)
+        if hardware['setup'] == "vertical_setup":
+            wafer_id = hardware["wafer_id"]
+            _configurator.setUseVerticalSetup(wafer_id, True);
+            # check for IP and number of HICANNs in the jtag chain for vertical setup
+            if hardware.has_key('setup_params'):
+                vs_params = hardware['setup_params']
+                if vs_params.has_key('ip'):
+                    _configurator.setIPv4VerticalSetup(wafer_id, vs_params['ip']);
+                if vs_params.has_key('num_hicanns'):
+                    _configurator.setNumHicannsVerticalSetup(wafer_id, vs_params['num_hicanns'])
+        else: # wafer
+            wafer_id = hardware["wafer_id"]
+            _configurator.setUseVerticalSetup(wafer_id, False);
+
+    _configurator.init(_mapper.GetHWModel(), _mapper.GetBioModel(), _useSystemSim, _systemSimTimeStepInPS, _tempFolder)
+    _configurator.setAcceleration(_speedupFactor)
+
+    _init_mapping_statistics(extra_params)
+
+    _calledSetup = True
+    
+    # end of specific setup
+    
     simulator.state.dt = timestep  # move to common.setup?
     simulator.state.min_delay = min_delay
     simulator.state.max_delay = max_delay
