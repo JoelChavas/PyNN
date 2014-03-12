@@ -23,9 +23,12 @@ from pyNN.random import NumpyRNG
 from . import simulator
 
 # hardware specific PyNN modules
-from .standardmodels import *
+from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson
+from .standardmodels.synapses import TsodyksMarkramMechanism, StaticSynapse
 from .populations import Population, PopulationView, Assembly
 from .projections import Projection
+from electrodes import PeriodicCurrentSource, FG_ALLOWED_PERIODS
+
 
 # utility modules
 from documentation import _default_args
@@ -177,6 +180,30 @@ def _set_speedup_factor(speedup):
 # make sure all models are on the same time base
 _set_speedup_factor(_speedupFactor)
 
+# =============================================================================
+#   Utility functions and classes
+# =============================================================================
+
+get_current_time, get_time_step, get_min_delay, get_max_delay, \
+                    num_processes, rank = common.build_state_queries(simulator)
+                    
+# =============================================================================
+#  Low-level API for creating, connecting and recording from individual neurons
+# =============================================================================
+initialize = common.initialize
+connect = common.build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
+build_record = common.build_record
+create = common.build_create(Population)
+
+set = common.set
+record = common.build_record(simulator)
+record_v = lambda source, filename: record(['v'], source, filename)
+record_gsyn = lambda source, filename: record(['gsyn_exc', 'gsyn_inh'], source, filename)
+
+run, run_until = common.build_run(simulator)
+run_for = run
+
+reset = common.build_reset(simulator)
 
 # ==============================================================================
 #   Functions for simulation set-up and control
@@ -223,27 +250,3 @@ def end(compatible_output=True):
         population.write_data(io, variables)
     simulator.state.write_on_end = []
     # should have common implementation of end()
-
-run, run_until = common.build_run(simulator)
-run_for = run
-
-reset = common.build_reset(simulator)
-
-initialize = common.initialize
-
-get_current_time, get_time_step, get_min_delay, get_max_delay, \
-                    num_processes, rank = common.build_state_queries(simulator)
-
-#            )
-
-create = common.build_create(Population)
-
-connect = common.build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
-
-#set = common.set
-
-record = common.build_record(simulator)
-
-record_v = lambda source, filename: record(['v'], source, filename)
-
-record_gsyn = lambda source, filename: record(['gsyn_exc', 'gsyn_inh'], source, filename)

@@ -15,8 +15,8 @@
 
 from pyNN import common
 from pyNN.standardmodels import cells, build_translations
-from .simulator import import state
-from range_checker import *
+from ..simulator import state
+from ..range_checker import *
 
 ## nS
 BIG_HW_CAP = 0.0026
