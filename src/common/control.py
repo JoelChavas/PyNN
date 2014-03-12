@@ -27,7 +27,7 @@ class BaseState(object):
     def __init__(self):
         """Initialize the simulator."""
         self.running = False
-        self.t_start = 0
+        self.t_start = 0.
         self.write_on_end = [] # a list of (population, variable, filename) combinations that should be written to file on end()
         self.recorders = set([])
 
