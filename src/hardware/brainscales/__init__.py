@@ -782,6 +782,135 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
     else:
         exceptionString = "ERROR: Has to be cell type " + EIF_cond_exp_isfa_ista.__name__ + " or " + SpikeSourcePoisson.__name__ + " or " + SpikeSourceArray.__name__ # Why does it have to be EIF_cond_alpha_isfa_ista?
         raise Exception(exceptionString)
+ 
+
+def _run_mapping():
+    """!
+    Run mapping without starting the experiment.
+    After this function has been called, the following is currently NOT possible anymore:
+        - create or connect neurons, spike and current sources.
+        - change neuron, synapse, or current source parameters
+        - add recording of voltages or spikes
+    The following is possible:
+        - change input spikes
+    """
+
+    global _logfile
+    global _neuronsChanged
+    global _synapsesChanged
+    global _connectivityChanged
+    global _inputChanged
+    global _preprocessor
+    global _mapper
+    global _configurator
+    global _calledRunMapping
+    global _interactiveMappingMode
+    global _interactiveMappingModeGUI
+    global _experimentName
+    global _mappingStatisticsFile
+    global _fullConnectionMatrixFile
+    global _realizedConnectionMatrixFile
+    global _lostConnectionMatrixFile
+    global _setupstart
+
+    if not _calledSetup: 
+        raise Exception("ERROR: Call function 'setup(...)' first!")
+
+    if _interactiveMappingMode == True :
+        import mappinginteractive
+        from PyQt4 import QtGui
+        _app = QtGui.QApplication(sys.argv)
+
+    biomodelsize = 0
+    hwmodelsize = 0
+    setuptime = 0
+    mappingruntime = 0
+
+    if not _calledRunMapping:
+        # update hardware configuration
+        if (_neuronsChanged or _synapsesChanged or _connectivityChanged):
+            if _interactiveMappingMode == True :
+                toLog(WARNING, "Interactive Mapping mode, show Pre-Processing results not yet fully implemented!")
+                _widget = mappinginteractive.InteractiveMapping( statistics = _statistics,
+                        mappingstep = 0,
+                        mappinglog = _logfile,
+                        experimentname = str(_experimentName),
+                        ignoredb = bool(_preprocessor.getIgnoreDatabase()),
+                        dbip = str(_preprocessor.getDatabaseHost()),
+                        dbport = str(_preprocessor.getDatabasePort()),
+                        jsons = str(_preprocessor.getJSONPathName()) )
+                if _interactiveMappingModeGUI :
+                    _widget.show()
+                    _app.exec_()
+
+            # check if there is an uncommited placement
+            for manual_placer in mapper.placer_list:
+                if not manual_placer.committed:
+                    raise Exception("Error: Manual Mapping is not commited. run 'placer.commit()' first!")
+
+            # get sizes of data models before mappping
+            if not _mappingStatisticsFile == None :
+                biomodelsize = _statistics.GetBioModelSize()
+                hwmodelsize = _statistics.GetHWModelSize()
+                
+            # mapping process is initiated here
+            setuptime = time.time() - _setupstart
+            mappingstart = time.time()
+            _mapper.Run()
+            mappingruntime = time.time() - mappingstart
+
+            if _interactiveMappingMode == True :
+                toLog(WARNING, "Interactive Mapping mode, show Post-Processing results not yet fully implemented!")
+                 
+                _widget = mappinginteractive.InteractiveMapping(statistics = _statistics,
+                        mappingstep = 1,
+                        mappinglog = _logfile,
+                        experimentname = str(_experimentName),
+                        ignoredb = bool(_preprocessor.getIgnoreDatabase()),
+                        dbip = str(_preprocessor.getDatabaseHost()),
+                        dbport = str(_preprocessor.getDatabasePort()),
+                        jsons = str(_preprocessor.getJSONPathName()) )
+                if _interactiveMappingModeGUI :
+                    _widget.show()
+                    _app.exec_()
+
+        if not _mappingStatisticsFile == None :
+            '''
+            create a statistics file containing the mapping statistics
+            '''
+            if not os.path.exists('mapping_statistics'):
+                os.makedirs('mapping_statistics')
+            f = open('mapping_statistics/'+_mappingStatisticsFile,'w')
+            f.write("# neurons[abs] synapses[abs] stimuli[abs] stimsynapses[abs] mappingquality[rel] neuronloss[rel] synapseloss[rel] hwefficiency[rel] biomodelsize[Byte] hwmodelsize[Byte] setuptime[s] runtime[s]\n")
+            f.write(str(_statistics.GetBioNeuronCount())+" ")
+            f.write(str(_statistics.GetBioSynapseCount())+" ")
+            f.write(str(_statistics.GetBioStimuliCount())+" ")
+            f.write(str(_statistics.GetBioStimuliSynapseCount())+" ")
+            f.write(str(_statistics.GetMappingQuality())+" ")
+            f.write(str(_statistics.GetNeuronLoss())+" ")
+            f.write(str(_statistics.GetSynapseLoss())+" ")
+            f.write(str(_statistics.GetHardwareEfficiency())+" ")
+            f.write(str(biomodelsize)+" ")
+            f.write(str(hwmodelsize)+" ")
+            f.write(str(setuptime)+" ")
+            f.write(str(mappingruntime)+" ")
+            f.write("\n")
+            f.close()
+
+        if _fullConnectionMatrixFile is not None:
+            _statistics.writeRawConnectionMatrix(_fullConnectionMatrixFile ,True,True)
+        if _realizedConnectionMatrixFile is not None:
+            _statistics.writeRawConnectionMatrix(_realizedConnectionMatrixFile ,True,False)
+        if _lostConnectionMatrixFile is not None:
+            _statistics.writeRawConnectionMatrix(_lostConnectionMatrixFile ,False,True)
+
+        # collect hardare configuration
+        _configurator.collectConfiguration()
+        _calledRunMapping = True
+    else:
+        toLog(WARNING,"_run_mapping() already called, but can be called only once.")
+
+ 
     
 def build_connect(projection_class, connector_class, static_synapse_class):
 
@@ -898,10 +1027,77 @@ connect = build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
 #   Functions for simulation set-up and control
 # ==============================================================================
 
-run, run_until = common.build_run(simulator)
-run_for = run
+#run, run_until = common.build_run(simulator)
+#run_for = run
 
 reset = common.build_reset(simulator)
+
+
+def run(simtime):
+    """!
+    Executes the emulation.
+
+    Run the simulation for simtime ms.
+    """
+
+    global _neuronsChanged
+    global _synapsesChanged
+    global _connectivityChanged
+    global _inputChanged
+    global _iteration
+    global _mapper
+    global _configurator
+    global _simtime
+    global _runSystemC
+
+    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+
+    _simtime = simtime
+    _preprocessor.BioModelInsertGlobalParameter("simtime",str(simtime))
+
+
+    # call mapping if not yet called
+    if not _calledRunMapping:
+        _run_mapping()
+
+    # update stimulation data configuration
+    # provide the spike times as c++ vectors for every input channel
+    # has to be called AFTER mapping, as it checks whether a PoissonSource
+    # is realized via L2 or via a background event generator
+    if _inputChanged:
+        # provide the spike times as c++ vectors for every input channel
+        for inputID in _externalInputs:
+            assertStimulationSpikeTrain(inputID, regenerate=True)
+        _inputChanged = False
+
+    # configure hardware with data from hardware graph
+    _configurator.configureAll()
+
+    # update change flags
+    _neuronsChanged = False
+    _synapsesChanged = False
+    _connectivityChanged = False
+
+    toLog(INFO, "Configuration data transferred to hardware.")
+
+    # run the prepared experiment
+    _configurator.setDuration(simtime)
+
+    toLog(INFO, "Starting to send spike trains to hardware.")
+    # set input spike trains
+    for inputID in _externalInputs:
+        if _preprocessor.BioModelStimulusIsExternal(inputID.graphModelNode):
+            _configurator.sendSpikeTrain(inputID.graphModelNode)
+
+    toLog(INFO, 'Starting experiment execution.')
+    toLog(INFO, 'Experiment iteration: %8d' % _iteration)
+    #if not _preprocessor.hardwareAvailable():
+        #toLog(INFO, "Running pyNN description on a virtual hardware system!")
+    _configurator.runSimulation()
+
+    _iteration += 1
+    toLog(INFO, 'Experiment iteration finished.')
+
 
 def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     """!
