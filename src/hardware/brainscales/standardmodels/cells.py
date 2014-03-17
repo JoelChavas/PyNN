@@ -135,6 +135,7 @@ class IF_cond_exp(cells.IF_cond_exp, HardwareNeuronRangeChecker):
     c_hw = BIG_HW_CAP
 
     def __init__(self,parameters=None):
+        cells.IF_cond_exp.__init__(self)
         #XXX this check on the reverse_translate function?
         if parameters:
             checked_params = self.reverse_translate(parameters)

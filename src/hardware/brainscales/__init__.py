@@ -1,3 +1,4 @@
+# encoding: utf-8
 """
 hardware.brainscales implementation of the PyNN API.
 
@@ -24,7 +25,7 @@ from pyNN.random import NumpyRNG
 from . import simulator
 
 # hardware specific PyNN modules
-from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson
+from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson, supportedNeuronTypes
 from .standardmodels.synapses import TsodyksMarkramMechanism, StaticSynapse
 from .populations import Population, PopulationView, Assembly
 from .projections import Projection
@@ -460,6 +461,69 @@ def _init_mapping_statistics(extra_params):
         _statistics.SetBioModel(_mapper.GetBioModel())
         _statistics.Initialize()
 
+class NoDelayWarning():
+    """!
+    Gives a Warning that there are currently no delay available on the hardware.
+    """
+    warning_called = False
+    def __init__(self):
+        if not NoDelayWarning.warning_called:
+            delay_range_at_104 = numpy.array([1.2,4.4]) # cf. bss-neuron-parameters
+            delay_range = delay_range_at_104*(_speedupFactor/1.e4)
+            toLog(WARNING,"Synaptic Delays are currently not adjustable in the hardware. They will amount to values between {0} and {1} ms for your speedup factor of {2}.\n(This WARNING is raised only once!)\n".format(delay_range[0], delay_range[1], _speedupFactor))
+            NoDelayWarning.warning_called = True
+
+
+def _createSynapseParameterSet(weight=None, delay=None, synapse_type=None, mapping_priority=None, stp_parameters=None):
+    """!
+    Creates a new parameter set for a specific synapse or synapse group.
+
+        Creates a parameter set for one or many synapses within the BioModel.
+
+        @param weight           - the maximum of the transient conductance at this synapse, given in uS.
+        @param delay            - the delay of this synapse, given in ms.
+        @param synapse_type     - the type of this synapse, possible values are currently 'excitatory' and 'inhibitory'
+        @param mapping_priority - a priority value between 0 and 1 that describes the importance of realizing this synapse in hardware
+        @param stp_parameters   - a dictionary that keeps all STP parameters
+    """
+
+    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+
+    global _numberOfSynapseParameterSets
+    global _preprocessor
+
+    newParameterSet = _preprocessor.BioModelInsertSynapseParameterSet(str(_numberOfSynapseParameterSets))
+    _numberOfSynapseParameterSets += 1
+
+    if not weight: weight = 0.0
+    if not delay: delay = 0.0
+    if not synapse_type:
+        if weight < 0.0:
+            synapse_type = "inhibitory"
+        else:
+            synapse_type = "excitatory"
+    if synapse_type not in ["excitatory","inhibitory"]: raise Exception("ERROR: Argument synapse_type of function connect must be either 'excitatory' or 'inhibitory'!")
+    if (weight < 0.0):
+        weight = - weight;
+    if not mapping_priority: mapping_priority = 1.0
+
+    syn_params = SynParams()
+    syn_params.weight = weight
+    syn_params.mapping_priority = mapping_priority
+    # TODO: what about delay?
+    if synapse_type == "excitatory":
+        syn_params.syn_type = enum_synapse_type.excitatory
+    elif synapse_type == "inhibitory":
+        syn_params.syn_type = enum_synapse_type.inhibitory
+    if stp_parameters:
+        syn_params.stp_enabled = True
+        stp_params = STPParams()
+        stp_params.U = stp_parameters['U']
+        stp_params.tau_rec = stp_parameters['tau_rec']
+        stp_params.tau_facil = stp_parameters['tau_facil']
+        syn_params.stp_params = stp_params
+    _preprocessor.BioModelAttachParamsToSynapseParameterNode(newParameterSet, syn_params)
+    return newParameterSet
 
 # =============================================================================
 #   Utility low-level functions
@@ -486,7 +550,6 @@ get_current_time, get_time_step, get_min_delay, get_max_delay, \
 #  Low-level API for creating, connecting and recording from individual neurons
 # =============================================================================
 initialize = common.initialize
-connect = common.build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
 build_record = common.build_record
 create = common.build_create(Population)
 
@@ -494,6 +557,127 @@ set = common.set
 record = common.build_record(simulator)
 record_v = lambda source, filename: record(['v'], source, filename)
 record_gsyn = lambda source, filename: record(['gsyn_exc', 'gsyn_inh'], source, filename)
+
+
+def build_connect(projection_class, connector_class, static_synapse_class):
+
+    def connect(source, target, weight=0.0, delay=None, receptor_type=None, p=1., rng=None, sharedParameters=True, **extra_params):
+        """!
+        Connects cells, e.g. neurons or spike sources.
+    
+        Connect a source of spikes to a synaptic target.
+    
+        source and target can both be individual cells or lists of cells, in which case all possible
+        connections are made with probability p, using either the random number generator supplied,
+        or the default rng otherwise. extra_params contains any keyword arguments that are required
+        by a given simulator but not by others.
+    
+            @param source           - ID or list of IDs from which connections shall be established.
+            @param target           - ID or list of IDs to which connections shall be established.
+            @param weight           - maximum value of the transient synaptic conductance that is caused by spikes
+                                      running into the established synapse. The unit of this value is uS (micro Siemens).
+            @param delay            - delays are currently not supported by the hardware. If it is not None, it will be set to global min delay and a warning is raised.
+            @param receptor_type     - "excitatory" or "inhibitory"
+            @param p                - the connection probability, a value between 0.0 and 1.0
+            @param rng              - optionally: a random number generator that implements the function "uniform"
+            @param sharedParameters - if this is True, all n cells will get the same parameter node within the GraphModel.
+                                      Otherwise for every cell an individual parameter node will be created and connected.
+            @param synapse_dynamics - takes SynapseDynamics object to configure fast and short aka STP and STDP parameters
+            @param extra_params     - any keyword arguments that are required by this PyNN back-end but not by others.
+                                      Currently supported:
+                                          @param mapping_priority - a float value between 0 and 1 that determines the importance
+                                                                    of this synapse to be actually realized in the hardware system;
+                                                                    defaults to 1.
+                                          @param parameter_set    - an already existing synapse_parameter_set, i.e. a reference to a GMNode,
+                                                                    created by _createSynapseParameterSet(...)
+                                                                    if this parameter is passed and sharedParameters is True, all synapses will share this parameter set.
+    
+        """
+    
+        if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+        if _calledRunMapping: raise Exception("ERROR: Cannot connect cells after _run_mapping() has been called")
+        if p > 1.: toLog(WARNING, "A connection probability larger than 1 has been passed as connect argument!")
+    
+        # check if mapping priority (a value between 0 and 1) has been passed
+        if "mapping_priority" in extra_params.keys():
+            priority = extra_params["mapping_priority"]
+            if priority > 1.0 or priority < 0.0: raise Exception("ERROR: Only values between 0.0 and 1.0 are allowed for argument mapping_priority of function connect!")
+        else: priority = 1.0
+    
+        # check if a parameter_set has been passed
+        if "parameter_set" in extra_params.keys():
+            existing_parameter_set = extra_params["parameter_set"]
+        else:
+            existing_parameter_set = None
+            # if there is not yet a parameter set, we have to check the delays:
+            if delay and (delay is not common.build_state_queries(simulator)[2]):
+                delay = common.build_state_queries(simulator)[2];
+                NoDelayWarning()
+    
+        synapse = static_synapse_class(weight=weight, delay=delay)
+        if isinstance(synapse,StaticSynapse):
+            stp_parameters = None
+        elif isinstance(synapse,TsodyksMarkramMechanism):
+            stp_parameters = TsodyksMarkramMechanism.parameters
+        else:
+            raise Exception("ERROR: The only short-term synaptic plasticity type supported by the BrainscaleS hardware is TsodyksMarkram!")
+    
+        if isinstance( source, (common.BasePopulation, Assembly) ):
+            source = source.all_cells
+        elif not isinstance( source, list):
+            source = [source]
+        if isinstance( target, (common.BasePopulation, Assembly) ):
+            target = target.all_cells
+        elif not isinstance( target, list):
+            target= [target]
+    
+        global _synapsesChanged
+        _synapsesChanged = True
+        global _connectivityChanged
+        _connectivityChanged = True
+    
+#         # Check for proper source cell type:
+#         for src in source:
+#             if not isinstance(src, simulator.ID): raise errors.ConnectionError("ERROR: Source element %s is not of type ID." %str(src))
+#             if type(src.cell) not in supportedNeuronTypes:
+#                 if type(src.cell) in [SpikeSourcePoisson, SpikeSourceArray]:
+#                     global _inputChanged
+#                     _inputChanged = True
+#                 else: raise errors.ConnectionError("ERROR: Element %d of source is of type: %s. It is neither a supported neuron type nor a spike source." %(src, str(src.cellclass)))
+#         # Check for proper target cell type:
+#         for tgt in target:
+#             if not isinstance(tgt, simulator.ID): raise errors.ConnectionError("ERROR: Target element %s is not of type ID." %str(tgt))
+#             if type(tgt.cell) not in supportedNeuronTypes: raise errors.ConnectionError("ERROR: Element %d of target is of type: %s. It is not a supported neuron type." %(src, str(tgt.cellclass)))
+#             tgt.cell.checkConductanceRange('weight',weight)
+    
+        global _preprocessor
+    
+        try:
+            if sharedParameters:
+                newParameterSet = existing_parameter_set or _createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
+            for src in source:
+                if p < 1.:
+                    if rng: # use the supplied RNG
+                        rarr = rng.uniform(0.,1.,len(target))
+                    else:   # use the default RNG
+                        rarr = _globalRNG.uniform(0.,1.,len(target))
+                for j,tgt in enumerate(target):
+                    # evaluate if a connection has to be created
+                    if p >= 1. or rarr[j] < p:
+                        toLog(DEBUG1, 'Connecting ' + str(src) + ' with ' + str(tgt) + ' and weight ' + str(weight))
+                        if not sharedParameters: newParameterSet = _createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
+                        _preprocessor.BioModelInsertSynapse(src.graphModelNode,tgt.graphModelNode,newParameterSet)
+
+            connector = connector_class(p_connect=p, rng=rng)
+            return projection_class(source, target, connector, receptor_type=receptor_type,
+                                    synapse_type=synapse)
+    
+        except Exception,e:
+            raise errors.ConnectionError(e)
+    
+    return connect
+
+connect = build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
 
 # ==============================================================================
 #   Functions for simulation set-up and control
@@ -682,6 +866,7 @@ def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     simulator.state.dt = timestep  # move to common.setup?
     simulator.state.min_delay = min_delay
     simulator.state.max_delay = max_delay
+    
     return 0
 
 # re format docstring of setup function
@@ -695,6 +880,36 @@ def list_standard_models():
 
 def end(compatible_output=True):
     """Do any necessary cleaning up before exiting."""
+    
+    # gain access to the objects which are to be cleaned
+    global _preprocessor
+    global _mapper
+    global _postprocessor
+    global _statistics
+    global _configurator
+    global _calledSetup
+    global _calledRunMapping
+    global _numberOfNeurons
+    global _iteration
+    
+    # clear list of place instances
+    mapper.placer_list = []
+    
+    # Destroy the mapping and configuration instances
+    if _postprocessor is not None:
+        toLog(INFO, "Erasing GraphModels.")
+        _postprocessor.EraseModels()
+    _preprocessor = None
+    _mapper = None
+    _postprocessor = None
+    _statistics = None
+    _configurator = None
+    _calledSetup = False
+    _calledRunMapping = False
+
+    # reset the number of neurons created so far
+    _numberOfNeurons = 0
+    
     for (population, variables, filename) in simulator.state.write_on_end:
         io = get_io(filename)
         population.write_data(io, variables)
