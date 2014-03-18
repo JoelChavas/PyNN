@@ -35,6 +35,7 @@ from electrodes import PeriodicCurrentSource, FG_ALLOWED_PERIODS
 # utility modules
 from documentation import _default_args, _default_extra_params, \
                         _hardware_args, _default_extra_params_ess
+from hardware_config import setup as hardwareSetup
 
 # heidelberg specific mapping modules
 
@@ -82,7 +83,7 @@ _globalRNG = NumpyRNG().rng
 ## flag to check if the setup() method has been called already
 _calledSetup = False
 ## use executable system simulation instead of real hardware
-_useSystemSim = True
+_useSystemSim = False
 ## flag to check, whether the SystemC simulation has already been intialized, which can happen only once.
 _initializedSystemC = False
 ## flag to check, whether the SystemC simulation has already been run, which can happen only once.
