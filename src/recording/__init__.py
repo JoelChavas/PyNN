@@ -270,7 +270,7 @@ class Recorder(object):
             data.segments.append(self._get_current_segment(filter_ids=filter_ids, variables=variables, clear=clear))
         data.name = self.population.label
         data.description = self.population.describe()
- #       data.rec_datetime = data.segments[0].rec_datetime
+        data.rec_datetime = data.segments[0].rec_datetime
         data.annotate(**self.metadata)
         if annotations:
             data.annotate(**annotations)
