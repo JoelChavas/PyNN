@@ -15,8 +15,9 @@
 
 import numpy
 from pyNN import recording, errors
-import pyNN.hardware.brainscales
+from . import globals as g
 from . import simulator
+import pyNN.hardware.brainscales
 
 
 # --- For implementation of record_X()/get_X()/print_X() -----------------------
@@ -44,8 +45,8 @@ class Recorder(recording.Recorder):
 
         @param new_ids
         """
-	self.variable = variable
-        if pyNN.hardware.brainscales._calledRunMapping: raise Exception("ERROR: Cannot add recording after _run_mapping() has been called")
+        self.variable = variable
+        if g._calledRunMapping: raise Exception("ERROR: Cannot add recording after _run_mapping() has been called")
         record_params = {}
         if variable == 'spikes':
             record_params = Recorder.map_variable_record_params['spikes']
@@ -68,7 +69,7 @@ class Recorder(recording.Recorder):
         # if we we recorde voltage, we have to clone the parameterset, as there will be an individual filename for each neuron
         if variable == 'v':
             considerCloningNecessary = True
-            vm_file_base_name = pyNN.hardware.brainscales._tempFolder
+            vm_file_base_name = g._tempFolder
 
         # now actually set the new parameters to the already existing or to a cloned parameter set
         # if all cells in list share the same original parameter set, cloning this set once is enough
@@ -82,14 +83,14 @@ class Recorder(recording.Recorder):
                 hasBeenCloned = False
                 # if parameter set needs to be cloned, it is enough to do this only once
                 if variable == 'spikes':
-                    id.graphModelNodeParams = pyNN.hardware.brainscales._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['record'], "1", True)
-                    updatedParameterSet = pyNN.hardware.brainscales._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['filename'], str(self.file), False)
+                    id.graphModelNodeParams = g._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['record'], "1", True)
+                    updatedParameterSet = g._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['filename'], str(self.file), False)
                 elif variable == 'v':
                     vm_filename = vm_file_base_name + "/vm_" + str(int(id)).zfill(5) + ".tmp"
-                    id.graphModelNodeParams = pyNN.hardware.brainscales._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['record'], "1", True)
-                    updatedParameterSet = pyNN.hardware.brainscales._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['filename'], vm_filename, False)
+                    id.graphModelNodeParams = g._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['record'], "1", True)
+                    updatedParameterSet = g._preprocessor.BioModelSetParameter(id.graphModelNode, record_params['filename'], vm_filename, False)
             else:
-                pyNN.hardware.brainscales._preprocessor.BioModelAssignElementToParameterSet(id.graphModelNode,updatedParameterSet)
+                g._preprocessor.BioModelAssignElementToParameterSet(id.graphModelNode,updatedParameterSet)
             # update pyNN-internal mapping of IDs to their parameter sets
             id.graphModelNodeParams = updatedParameterSet
             cellCount +=1
@@ -101,7 +102,20 @@ class Recorder(recording.Recorder):
         """
         raise NotImplementedError("Recording reset is not currently supported for pyNN.hardware.brainscales")
 
-
+    def _get_spiketimes(self, id):
+        # for stage1 and for external stimuli we can use the first method
+        if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
+            spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
+        # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
+        else:
+            spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode)
+        spikes = numpy.array(spiketrain)
+        if len(spikes) > 0:
+            data = numpy.array([numpy.ones(spikes.shape)*id, spikes]).T
+        else:
+            data = numpy.empty((0,2))
+        return data
+      
     def _get(self, gather=False, compatible_output=True, filter=None):
         """!
 
@@ -118,11 +132,11 @@ class Recorder(recording.Recorder):
             data = numpy.empty((0,2))
             for id in self.filter_recorded(filter):
                 # for stage1 and for external stimuli we can use the first method
-                if (id < 0 and pyNN.hardware.brainscales._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
-                    spiketrain = pyNN.hardware.brainscales._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
+                if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
+                    spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
                 # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
                 else:
-                    spiketrain = pyNN.hardware.brainscales._configurator.receiveSpikeTrain(id.graphModelNode)
+                    spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode)
                 spikes = numpy.array(spiketrain)
                 if len(spikes) > 0:
                     new_data = numpy.array([numpy.ones(spikes.shape)*id, spikes]).T
@@ -130,10 +144,10 @@ class Recorder(recording.Recorder):
         elif self.variable == 'v':
             data = numpy.empty((0,3))
             for id in self.filter_recorded(filter):
-                voltages = numpy.array(pyNN.hardware.brainscales._configurator.receiveVoltageTrace(id.graphModelNode))
+                voltages = numpy.array(g._configurator.receiveVoltageTrace(id.graphModelNode))
                 # compute number of times that are supposed to be returned
-                dt = pyNN.hardware.brainscales._dt
-                simtime = pyNN.hardware.brainscales._simtime
+                dt = g._dt
+                simtime = g._simtime
                 num_times = int(simtime/dt) +1
                 times = numpy.arange(0.,num_times*dt, dt)
                 ids = numpy.ones(num_times)*id

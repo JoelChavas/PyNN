@@ -19,7 +19,7 @@ import tempfile
 from pyNN import common, standardmodels
 from pyNN.connectors import *
 from pyNN.recording import *
-from pyNN.random import NumpyRNG
+import recording
 
 # hardware specific python modules
 from . import simulator
@@ -27,9 +27,9 @@ from . import simulator
 # hardware specific PyNN modules
 from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson, supportedNeuronTypes
 from .standardmodels.synapses import TsodyksMarkramMechanism, StaticSynapse
-from .populations import Population, PopulationView, Assembly
+from .populations import Recorder, Population, PopulationView, Assembly
 from .projections import Projection
-from electrodes import PeriodicCurrentSource, FG_ALLOWED_PERIODS
+from .electrodes import PeriodicCurrentSource, FG_ALLOWED_PERIODS
 
 
 # utility modules
@@ -73,93 +73,7 @@ DEBUG3  = mapping.DEBUG3
 #  VARIABLES DEFINITION
 #========================
 
-# loglevel and name of the logfile for the global logger 
-_logfile = 'logfile.txt'
-_loglevel = 2 # INFO
-## the list of hardwares
-_hardware_list = None
-## this module's random number generator
-_globalRNG = NumpyRNG().rng
-## flag to check if the setup() method has been called already
-_calledSetup = False
-## use executable system simulation instead of real hardware
-_useSystemSim = False
-## flag to check, whether the SystemC simulation has already been intialized, which can happen only once.
-_initializedSystemC = False
-## flag to check, whether the SystemC simulation has already been run, which can happen only once.
-_runSystemC = False
-## the mapping preprocessor
-_preprocessor = None
-## the mapping algorithm controller
-_mapper = None
-## the mapping postprocessor
-_postprocessor = None
-## the mapping statistics
-_statistics = None
-## the hardware configuration controller
-_configurator = None
-## the number of neurons created so far
-_numberOfNeurons = 0
-## the number of neuron parameter sets created so far
-_numberOfNeuronParameterSets = 0
-## the number of current source parameter sets created so far
-_numberOfCurrentSourceParameterSets = 0
-## the number of current sources created so far
-_numberOfCurrentSources = 0
-## the number of synapse parameter sets created so far
-_numberOfSynapseParameterSets = 0
-## flag for signalling a neuron parameter change, helps to reduce PC <-> chip traffic
-_neuronsChanged = True
-## flag for signalling a synapse parameter change, helps to reduce PC <-> chip traffic
-_synapsesChanged = True
-## flag for signalling a connectivity parameter change, helps to reduce PC <-> chip traffic
-_connectivityChanged = True
-## flag for signalling an input parameter change, helps to reduce PC <-> chip traffic
-_inputChanged = True
-## flag to check whether _run_mapping() has been called already
-_calledRunMapping = False
-## counts the number of experiment runs
-_iteration = 0
-## container for external input objects (not IDs)
-_externalInputs = []
-## speedup factor of the (virtual) hardware system
-_speedupFactor = 10000.
-## if True: use the small hardware capacitance (500fF instead of 2pF)
-_useSmallCap = False
-## container for the random number generation seeds
-_rng_seeds = [0]
-## temporal resolution of the acquisition of the analog data (currently via oscilloscope), in msec
-_dt = simulator.state.dt
-## simulation duration of the current run
-_simtime = 0.
-## enable the interactive Mapping mode
-_interactiveMappingMode = False
-## enable the interactive Mapping mode's GUI
-_interactiveMappingModeGUI = False
-## a meaningful name for the experiment
-_experimentName = 'no name'
-## the chosen mapping strategy
-_mappingStrategy = 'normal'
-## the list of mapping quality weights
-_mapping_quality_weights = None
-## time step of virtual hardware SystemC simulation
-_systemSimTimeStepInPS = 10
-## file for mapping statistics
-_mappingStatisticsFile = None
-## the mapping statistics class c accessor (GMStats)
-_statistics = None
-## file for writing the full connection matrix of the entire network
-_fullConnectionMatrixFile = None
-## file for writing a matrix with all connections that were realized during mapping.
-_realizedConnectionMatrixFile = None
-## file for writing a matrix with all connections that were lost during mapping.
-_lostConnectionMatrixFile = None
-## folder containing all temporary files (PyNN and / or system simulation)
-_tempFolder = None
-## this flag is true, when elements in the temporary folder shall not be deleted after simulation
-_deltempFolder = True
-## holds the time stamp of the setup start
-_setupstart = 0
+import globals as g
                           
 logger = logging.getLogger("PyNN")
 
@@ -173,24 +87,19 @@ def _set_speedup_factor(speedup):
     sets speedup factor and scales the allowed parameter ranges for all models to the current speedup.
     @param speedup - new speedup factor
     """
-    global _speedupFactor
-    _speedupFactor = speedup
+    g._speedupFactor = speedup
     # scaling parameter ranges
     for model in [EIF_cond_exp_isfa_ista,IF_cond_exp,SpikeSourcePoisson,TsodyksMarkramMechanism]:
-        model.scaleParameterRangesTime(_speedupFactor)
+        model.scaleParameterRangesTime(g._speedupFactor)
     # also update the allowed periods of PeriodicCurrentSource
-    PeriodicCurrentSource.ALLOWED_PERIODS = FG_ALLOWED_PERIODS(_speedupFactor)
-
-# make sure all models are on the same time base
-_set_speedup_factor(_speedupFactor)
+    PeriodicCurrentSource.ALLOWED_PERIODS = FG_ALLOWED_PERIODS(g._speedupFactor)
 
 def _set_trafo_params(extra_params):
     """
     sets the parameter range and trafo settings from the extra_params.
     to be called from setup()
-    Must be called before _init_preprocessor (for _useSmallCap)
+    Must be called before _init_preprocessor (for g._useSmallCap)
     """
-    global _useSmallCap
     import range_checker
     # check if we ignore the ranges of the hw parameters
     if 'ignoreHWParameterRanges' in extra_params.keys():
@@ -206,7 +115,7 @@ def _set_trafo_params(extra_params):
             # if yes, we have to scale the parameter ranges of neurons and synapses.
             for model in [EIF_cond_exp_isfa_ista,IF_cond_exp]:
                 model.scaleParameterRangesCap(SMALL_HW_CAP, BIG_HW_CAP)
-        _useSmallCap = extra_params['useSmallCap']
+        g._useSmallCap = extra_params['useSmallCap']
         
 def _create_temp_folder(extra_params):
     """
@@ -215,33 +124,24 @@ def _create_temp_folder(extra_params):
     if it exists, it is used as temporary folder
     otherwise a  folder under /tmp is created
     """
-    global _tempFolder
-    global _deltempFolder
     # check if name for temporary folder is specified by user
     if 'tempFolder' in extra_params.keys():
-        _tempFolder = extra_params['tempFolder']
+        g._tempFolder = extra_params['tempFolder']
         # if folder already exists, clean it
-        if os.access(_tempFolder, os.F_OK):
+        if os.access(g._tempFolder, os.F_OK):
             import shutil
-            shutil.rmtree(_tempFolder)
-        os.makedirs(_tempFolder)
-        _deltempFolder = False
+            shutil.rmtree(g._tempFolder)
+        os.makedirs(g._tempFolder)
+        g._deltempFolder = False
     else:
         import tempfile
-        _tempFolder = tempfile.mkdtemp(prefix='FacetsHW')
-    toLog(DEBUG0, "Created folder " + str(_tempFolder) + " for temporary files needed by PyNN and Systemsim")
+        g._tempFolder = tempfile.mkdtemp(prefix='FacetsHW')
+    toLog(DEBUG0, "Created folder " + str(g._tempFolder) + " for temporary files needed by PyNN and Systemsim")
 
 def _init_preprocessor(extra_params):
     """
     initialize preprocessor
     """
-    global _hardware_list
-    global _preprocessor
-    global _rng_seeds
-    global _interactiveMappingMode
-    global _interactiveMappingModeGUI
-    global _experimentName
-    assert _preprocessor
 
     def user_or_default(param, user=extra_params, default=_default_extra_params, log=False):
         if user.has_key(param):
@@ -253,18 +153,18 @@ def _init_preprocessor(extra_params):
             toLog(INFO, '%s is set to %s' % (param, str(val)))
         return val
 
-    _interactiveMappingMode = user_or_default('interactiveMappingMode')
-    _interactiveMappingModeGUI = user_or_default('interactiveMappingModeGUI')
-    _experimentName = user_or_default('experimentName')
-    _mapping_quality_weights = user_or_default('mappingQualityWeights')
+    g._interactiveMappingMode = user_or_default('interactiveMappingMode')
+    g._interactiveMappingModeGUI = user_or_default('interactiveMappingModeGUI')
+    g._experimentName = user_or_default('experimentName')
+    g._mapping_quality_weights = user_or_default('mappingQualityWeights')
 
 # FIXME -- ME: find a more elegant way for the conversion
-    weigthdict = dict(_mapping_quality_weights[0])
+    weigthdict = dict(g._mapping_quality_weights[0])
     weightinput = mappingutilities.mapStringFloat()
     weightinput['G_HW'] = weigthdict['G_HW']
     weightinput['G_PR'] = weigthdict['G_PR']
     weightinput['G_T'] = weigthdict['G_T']
-    _preprocessor.setMappingQualityWeights(weightinput)
+    g._preprocessor.setMappingQualityWeights(weightinput)
 
     # check if hwinit filename is specified by user
     if 'hwinitFilename' in extra_params.keys():
@@ -273,43 +173,43 @@ def _init_preprocessor(extra_params):
         raise APIChangeError(err_str)
 
     # initialize the preprocessor
-    _preprocessor.setRandomSeed(_rng_seeds[0])
+    g._preprocessor.setRandomSeed(g._rng_seeds[0])
 
     default_extra_params = _default_extra_params
-    if _useSystemSim:
+    if g._useSystemSim:
         default_extra_params = _default_extra_params_ess
-    elif (len(_hardware_list) > 1):
+    elif (len(g._hardware_list) > 1):
         default_extra_params = _default_extra_params_multiwafer
 
-    _preprocessor.setAlgoInitFileName(user_or_default('algoinitFilename', default=default_extra_params))
-    _preprocessor.setJSONPathName(user_or_default('jsonPathname', default=default_extra_params))
+    g._preprocessor.setAlgoInitFileName(user_or_default('algoinitFilename', default=default_extra_params))
+    g._preprocessor.setJSONPathName(user_or_default('jsonPathname', default=default_extra_params))
 
-    _preprocessor.setDatabaseHost(user_or_default('databaseHost'))
-    _preprocessor.setDatabasePort(user_or_default('databasePort'))
-    _preprocessor.setIgnoreDatabase(user_or_default('ignoreDatabase'))
-    _preprocessor.setInteractiveMapping(_interactiveMappingMode)
+    g._preprocessor.setDatabaseHost(user_or_default('databaseHost'))
+    g._preprocessor.setDatabasePort(user_or_default('databasePort'))
+    g._preprocessor.setIgnoreDatabase(user_or_default('ignoreDatabase'))
+    g._preprocessor.setInteractiveMapping(g._interactiveMappingMode)
 
-    _mappingStrategy = user_or_default('mappingStrategy')
+    g._mappingStrategy = user_or_default('mappingStrategy')
     mappingStrategyOptions = ['valid','normal','best','user']
-    if _mappingStrategy in mappingStrategyOptions:
-        _preprocessor.setMappingStrategy(_mappingStrategy)
+    if g._mappingStrategy in mappingStrategyOptions:
+        g._preprocessor.setMappingStrategy(g._mappingStrategy)
     else :
-        raise TypeError("Value for mappingStrategy is: " + _mappingStrategy + " but must be one of: " + str(mappingStrategyOptions))
+        raise TypeError("Value for mappingStrategy is: " + g._mappingStrategy + " but must be one of: " + str(mappingStrategyOptions))
 
     # when using the ESS: make sure there is not more than one Wafer
     if extra_params.has_key("useSystemSim"):
         if extra_params["useSystemSim"]:
-            assert(len(_hardware_list) == 1), "When using the ESS, there can be maximally 1 hardware setup"
+            assert(len(g._hardware_list) == 1), "When using the ESS, there can be maximally 1 hardware setup"
 
     # if hicannsMax is spefied, check if valid and set it, otherwise use the default
     if extra_params.has_key('hicannsMax'):
         hicannsMax = extra_params['hicannsMax']
         _default_args['hicannsMax'].check(hicannsMax)
-        _preprocessor.setHicannsMax(hicannsMax)
+        g._preprocessor.setHicannsMax(hicannsMax)
 
     # settings for each wafer / vertical setup
     used_wafer_ids = []
-    for hardware in _hardware_list:
+    for hardware in g._hardware_list:
         assert isinstance(hardware, dict)
         assert hardware.has_key("wafer_id") # in each 'hardware' dictionary, there must be the wafer_id
         wafer_id = hardware["wafer_id"]
@@ -320,11 +220,11 @@ def _init_preprocessor(extra_params):
         if hardware.has_key("hicannIndices"):
             hicannIndices = hardware["hicannIndices"]
             _hardware_args["hicannIndices"].check(hicannIndices)
-            _preprocessor.setHicannIndicesForWafer(wafer_id, list_to_vectorInt(hicannIndices))
+            g._preprocessor.setHicannIndicesForWafer(wafer_id, list_to_vectorInt(hicannIndices))
     
-    _preprocessor.setMaxSynapseLoss(user_or_default('maxSynapseLoss'))
-    _preprocessor.setMaxNeuronLoss(user_or_default('maxNeuronLoss'))
-    _preprocessor.setHardwareNeuronSize(user_or_default('hardwareNeuronSize'))
+    g._preprocessor.setMaxSynapseLoss(user_or_default('maxSynapseLoss'))
+    g._preprocessor.setMaxNeuronLoss(user_or_default('maxNeuronLoss'))
+    g._preprocessor.setHardwareNeuronSize(user_or_default('hardwareNeuronSize'))
     # check if hwinit filename is specified by user
     if 'maxNeuronCountPerAnnCore' in extra_params.keys():
         err_str = "pynn.setup(): parameter 'maxNeuronCountPerAnnCore' is not supported anymore"
@@ -333,29 +233,23 @@ def _init_preprocessor(extra_params):
         raise APIChangeError(err_str)
 
     # now create the hwmodel
-    _preprocessor.Initialize()
+    g._preprocessor.Initialize()
 
 
 def _insert_global_hw_params(extra_params):
-    global _preprocessor
-    global _graphModelGlobalHardwareParameters
-    global _speedupFactor
-    global _dt
-    global _useSmallCap
-    global _useSystemSim
 
-    _graphModelGlobalHardwareParameters = _preprocessor.HWModelInsertGlobalParameterSet('GlobalParameters')
+    _graphModelGlobalHardwareParameters = g._preprocessor.HWModelInsertGlobalParameterSet('GlobalParameters')
 
     # insert speedup factor information
-    _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"speedupFactor",str(_speedupFactor))
-    toLog(DEBUG0, "Inserted global parameter speedupFactor " + str(_speedupFactor) + " into HWModel.")
+    g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"speedupFactor",str(g._speedupFactor))
+    toLog(DEBUG0, "Inserted global parameter speedupFactor " + str(g._speedupFactor) + " into HWModel.")
 
     # insert capacitor choice information
-    _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"useSmallCap",str(int(_useSmallCap)))
-    toLog(DEBUG0, "Inserted global parameter useSmallCap" + str(int(_useSmallCap)) + " into HWModel.")
+    g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"useSmallCap",str(int(g._useSmallCap)))
+    toLog(DEBUG0, "Inserted global parameter useSmallCap" + str(int(g._useSmallCap)) + " into HWModel.")
 
-    if _useSystemSim :
-        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"use_systemsim",str(int(_useSystemSim)))
+    if g._useSystemSim :
+        g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"use_systemsim",str(int(g._useSystemSim)))
 
     if extra_params.has_key('ess_params'):
         ess_params = extra_params['ess_params']
@@ -363,19 +257,19 @@ def _insert_global_hw_params(extra_params):
             weight_distortion = ess_params['weightDistortion']
             if not isinstance(weight_distortion, float):
                 raise TypeError("Value for weightDistortion must be of type float")
-            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weight_distortion",str(weight_distortion))
+            g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weight_distortion",str(weight_distortion))
             toLog(DEBUG0, "Synaptic weights on the ESS are distorted by " + str(weight_distortion))
         if 'pulseStatisticsFile' in ess_params.keys():
             pulse_statistics_file = ess_params['pulseStatisticsFile']
             if not isinstance(pulse_statistics_file, str):
                 raise TypeError("Value for pulseStatisticsFile must be of type str")
-            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"pulse_statistics_file",pulse_statistics_file)
+            g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"pulse_statistics_file",pulse_statistics_file)
             toLog(DEBUG0, "ESS pulse statistics are written to file " + pulse_statistics_file)
         if 'perfectSynapseTrafo' in ess_params.keys():
             perfect_synapse_trafo = ess_params['perfectSynapseTrafo']
             if not isinstance(perfect_synapse_trafo, bool):
                 raise TypeError("Value for perfectSynapseTrafo must be of type bool")
-            _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"perfect_synapse_trafo",str(int(perfect_synapse_trafo)))
+            g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"perfect_synapse_trafo",str(int(perfect_synapse_trafo)))
             if perfect_synapse_trafo:
                 toLog(DEBUG0, "Using a perfect synaptic weight transformation with the ESS")
                 # change weight ranges to be arbitrary:
@@ -400,7 +294,7 @@ def _insert_global_hw_params(extra_params):
             programFG = extra_params['programFloatingGates']
         else:
             raise TypeError("Value for programFloatingGates must be one of: " + programFGoptions)
-        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"programFloatingGates", programFG)
+        g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"programFloatingGates", programFG)
         toLog(DEBUG0, "If using the real hardware, programFloatingGates equals " + programFG)
 
     if 'weightBoost' in extra_params.keys():
@@ -408,13 +302,13 @@ def _insert_global_hw_params(extra_params):
             raise TypeError("Value for weightBoost must be of type float")
         if  extra_params['weightBoost'] < 0. or extra_params['weightBoost'] > 5.:
             raise ParameterValueOutOfRangeError('weightBoost', extra_params['weightBoost'], (0.,5.))
-        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weightBoost",str(extra_params['weightBoost']))
+        g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"weightBoost",str(extra_params['weightBoost']))
         toLog(DEBUG0, "If using the real hardware, all weights(V_gmax) are boosted by " + str(extra_params['weightBoost']) )
 
     # For virtual hardware: simulation time step is used as integration time step in systemC
-    if _preprocessor.virtualHardwareAvailable():
-        _preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"timestep",str(_dt))
-        toLog(DEBUG0, "Inserted global parameter timestep " + str(_dt) + " into HWModel.")
+    if g._preprocessor.virtualHardwareAvailable():
+        g._preprocessor.HWModelInsertParameter(_graphModelGlobalHardwareParameters,"timestep",str(g._dt))
+        toLog(DEBUG0, "Inserted global parameter timestep " + str(g._dt) + " into HWModel.")
 
 
 def _init_mapping_statistics(extra_params):
@@ -423,44 +317,37 @@ def _init_mapping_statistics(extra_params):
     and initializes the statistics instance, if needed.
     Must be called after initialization of preprocessor and models.
     """
-    global _interactiveMappingMode
-    global _mappingStatisticsFile
-    global _fullConnectionMatrixFile
-    global _realizedConnectionMatrixFile
-    global _lostConnectionMatrixFile
-    global _statistics
-    global _mapper
     
     statistics_needed = False; # flag indicating whether statistics are needed
 
-    if _interactiveMappingMode:
+    if g._interactiveMappingMode:
         toLog(INFO, 'PyNN: Mapping will be interactive')
         statistics_needed = True
         
     if 'mappingStatisticsFile' in extra_params.keys() and not extra_params['mappingStatisticsFile'] == None :
-        _mappingStatisticsFile = extra_params['mappingStatisticsFile']
-        logstring = 'Mapping Statistics are written to: ./mapping_statistics/'+_mappingStatisticsFile
+        g._mappingStatisticsFile = extra_params['mappingStatisticsFile']
+        logstring = 'Mapping Statistics are written to: ./mapping_statistics/'+g._mappingStatisticsFile
         toLog(INFO,logstring)
         statistics_needed = True
 
     if 'fullConnectionMatrixFile' in extra_params.keys():
-        _fullConnectionMatrixFile = extra_params['fullConnectionMatrixFile']
+        g._fullConnectionMatrixFile = extra_params['fullConnectionMatrixFile']
         statistics_needed = True
         
     if 'realizedConnectionMatrixFile' in extra_params.keys():
-        _realizedConnectionMatrixFile = extra_params['realizedConnectionMatrixFile']
+        g._realizedConnectionMatrixFile = extra_params['realizedConnectionMatrixFile']
         statistics_needed = True
         
     if 'lostConnectionMatrixFile' in extra_params.keys():
-        _lostConnectionMatrixFile = extra_params['lostConnectionMatrixFile']
+        g._lostConnectionMatrixFile = extra_params['lostConnectionMatrixFile']
         statistics_needed = True
 
     # if statistics are requested initialize statistics class
     if statistics_needed:
-        _statistics = mapping.statistics()
-        _statistics.SetHWModel(_mapper.GetHWModel())
-        _statistics.SetBioModel(_mapper.GetBioModel())
-        _statistics.Initialize()
+        g._statistics = mapping.statistics()
+        g._statistics.SetHWModel(g._mapper.GetHWModel())
+        g._statistics.SetBioModel(g._mapper.GetBioModel())
+        g._statistics.Initialize()
 
 class NoDelayWarning():
     """!
@@ -470,8 +357,8 @@ class NoDelayWarning():
     def __init__(self):
         if not NoDelayWarning.warning_called:
             delay_range_at_104 = numpy.array([1.2,4.4]) # cf. bss-neuron-parameters
-            delay_range = delay_range_at_104*(_speedupFactor/1.e4)
-            toLog(WARNING,"Synaptic Delays are currently not adjustable in the hardware. They will amount to values between {0} and {1} ms for your speedup factor of {2}.\n(This WARNING is raised only once!)\n".format(delay_range[0], delay_range[1], _speedupFactor))
+            delay_range = delay_range_at_104*(g._speedupFactor/1.e4)
+            toLog(WARNING,"Synaptic Delays are currently not adjustable in the hardware. They will amount to values between {0} and {1} ms for your speedup factor of {2}.\n(This WARNING is raised only once!)\n".format(delay_range[0], delay_range[1], g._speedupFactor))
             NoDelayWarning.warning_called = True
 
 
@@ -488,13 +375,10 @@ def _createSynapseParameterSet(weight=None, delay=None, synapse_type=None, mappi
         @param stp_parameters   - a dictionary that keeps all STP parameters
     """
 
-    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+    if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
 
-    global _numberOfSynapseParameterSets
-    global _preprocessor
-
-    newParameterSet = _preprocessor.BioModelInsertSynapseParameterSet(str(_numberOfSynapseParameterSets))
-    _numberOfSynapseParameterSets += 1
+    newParameterSet = g._preprocessor.BioModelInsertSynapseParameterSet(str(g._numberOfSynapseParameterSets))
+    g._numberOfSynapseParameterSets += 1
 
     if not weight: weight = 0.0
     if not delay: delay = 0.0
@@ -523,7 +407,7 @@ def _createSynapseParameterSet(weight=None, delay=None, synapse_type=None, mappi
         stp_params.tau_rec = stp_parameters['tau_rec']
         stp_params.tau_facil = stp_parameters['tau_facil']
         syn_params.stp_params = stp_params
-    _preprocessor.BioModelAttachParamsToSynapseParameterNode(newParameterSet, syn_params)
+    g._preprocessor.BioModelAttachParamsToSynapseParameterNode(newParameterSet, syn_params)
     return newParameterSet
 
 
@@ -538,25 +422,22 @@ def _createNeuronParameterSet(cellclass,cellparams=None):
         @param cellparams - a dictionary with the parameters that shall be inserted into the GraphModel.
     """
 
-    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
-
-    global _numberOfNeuronParameterSets
-    global _preprocessor
+    if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
 
 
-    newParameterSet = _preprocessor.BioModelInsertNeuronParameterSet(str(_numberOfNeuronParameterSets))
-    _numberOfNeuronParameterSets += 1
+    newParameterSet = g._preprocessor.BioModelInsertNeuronParameterSet(str(g._numberOfNeuronParameterSets))
+    g._numberOfNeuronParameterSets += 1
     if cellparams: parameters = cellparams
     else: parameters = cellclass.default_parameters
     for p in parameters.keys():
         toLog(DEBUG0, 'Adding parameter ' + str(p) + ' with value ' + str(parameters[p]))
-        _preprocessor.BioModelInsertParameter(newParameterSet, p, str(parameters[p]))
+        g._preprocessor.BioModelInsertParameter(newParameterSet, p, str(parameters[p]))
 
     # for neurons only: append information about membrane recording
-    _preprocessor.BioModelInsertParameter(newParameterSet, "record_membrane", "0")
-    _preprocessor.BioModelInsertParameter(newParameterSet, "record_membrane_filename", "")
-    _preprocessor.BioModelInsertParameter(newParameterSet, "record_spikes", "0")
-    _preprocessor.BioModelInsertParameter(newParameterSet, "record_spikes_filename", "")
+    g._preprocessor.BioModelInsertParameter(newParameterSet, "record_membrane", "0")
+    g._preprocessor.BioModelInsertParameter(newParameterSet, "record_membrane_filename", "")
+    g._preprocessor.BioModelInsertParameter(newParameterSet, "record_spikes", "0")
+    g._preprocessor.BioModelInsertParameter(newParameterSet, "record_spikes_filename", "")
 
     return newParameterSet
 
@@ -718,15 +599,13 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
                                                         the mapping analysis is enabled.
     """
 
-    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
-    if _calledRunMapping: raise Exception("ERROR: Cannot create cells after _run_mapping() has been called")
+    if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+    if g._calledRunMapping: raise Exception("ERROR: Cannot create cells after _run_mapping() has been called")
     if not (n > 0 and isinstance(n, int)): raise Exception('ERROR: Argument n of function create must be a positive integer.')
 
-    global _neuronsChanged
-    _neuronsChanged = True
-    # TODO: if spikeSources are generated, _inputChanged = True ?
-    global _numberOfNeurons
-    global _numberOfNeuronParameterSets
+    g._neuronsChanged = True
+    # TODO: if spikeSources are generated, g._inputChanged = True ?
+
 
     if not 'cell_tag' in extra_params.keys(): cell_tag_base = None
     else: cell_tag_base = extra_params['cell_tag']
@@ -738,14 +617,14 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
             pynnNeuron = cellclass
             if (i == 0) or (not sharedParameters):
                 newParameterSet = _createNeuronParameterSet(cellclass)
-                _preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", "IF_cond_exp")
+                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", "IF_cond_exp")
                 if cell_tag_base:
-                    _preprocessor.BioModelInsertParameter(newParameterSet, "pop_label", cell_tag_base)
-            bioGraphNeuron = _preprocessor.BioModelInsertSpikeRecordableNeuron(str(_numberOfNeurons))
-            _preprocessor.BioModelAssignElementToParameterSet(bioGraphNeuron,newParameterSet)
-            returnList.append( ID(_numberOfNeurons, pynnNeuron, bioGraphNeuron, newParameterSet, id_tag=cell_tag) )
-            if cell_tag: _preprocessor.BioModelInsertNeuronTag(bioGraphNeuron, cell_tag)
-            _numberOfNeurons += 1
+                    g._preprocessor.BioModelInsertParameter(newParameterSet, "pop_label", cell_tag_base)
+            bioGraphNeuron = g._preprocessor.BioModelInsertSpikeRecordableNeuron(str(g._numberOfNeurons))
+            g._preprocessor.BioModelAssignElementToParameterSet(bioGraphNeuron,newParameterSet)
+            returnList.append( ID(g._numberOfNeurons, pynnNeuron, bioGraphNeuron, newParameterSet, id_tag=cell_tag) )
+            if cell_tag: g._preprocessor.BioModelInsertNeuronTag(bioGraphNeuron, cell_tag)
+            g._numberOfNeurons += 1
         if n == 1: return returnList[0]
         else: return returnList
 
@@ -762,21 +641,21 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
             pynnSpikeSource = cellclass(cellparams)
             if (i == 0) or (not sharedParameters):
                 newParameterSet = _createStimulusParameterSet(cellclass, pynnSpikeSource.parameters)
-                _preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", cellclass.__name__)
-            newExternalInputSize = numpy.size(_externalInputs)+1
+                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", cellclass.__name__)
+            newExternalInputSize = numpy.size(g._externalInputs)+1
             index = -newExternalInputSize
-            bioGraphSpikeSourceNode = _preprocessor.BioModelInsertStimulus(str(index))
-            _preprocessor.BioModelAssignElementToParameterSet(bioGraphSpikeSourceNode,newParameterSet)
+            bioGraphSpikeSourceNode = g._preprocessor.BioModelInsertStimulus(str(index))
+            g._preprocessor.BioModelAssignElementToParameterSet(bioGraphSpikeSourceNode,newParameterSet)
             newID = ID(index, pynnSpikeSource, bioGraphSpikeSourceNode, newParameterSet, has_spikes=False)
             returnList.append(newID)
             # write spikes to spike source array
             # (for SpikeSourcePoisson this is done later, in run(), see comment there)
             if cellparams and cellparams.has_key('spike_times'):
                 st = pynnHardwareSpikeArray(cellparams['spike_times'])
-                _preprocessor.BioModelAttachSpikeTrainToStimulus(bioGraphSpikeSourceNode, st)
+                g._preprocessor.BioModelAttachSpikeTrainToStimulus(bioGraphSpikeSourceNode, st)
                 newID.has_spikes = True
-            if cell_tag: _preprocessor.BioModelInsertNeuronTag(bioGraphSpikeSourceNode, cell_tag)
-            _externalInputs.append(returnList[-1])
+            if cell_tag: g._preprocessor.BioModelInsertNeuronTag(bioGraphSpikeSourceNode, cell_tag)
+            g._externalInputs.append(returnList[-1])
         if n == 1: return returnList[0]
         else: return returnList
 
@@ -796,28 +675,10 @@ def _run_mapping():
         - change input spikes
     """
 
-    global _logfile
-    global _neuronsChanged
-    global _synapsesChanged
-    global _connectivityChanged
-    global _inputChanged
-    global _preprocessor
-    global _mapper
-    global _configurator
-    global _calledRunMapping
-    global _interactiveMappingMode
-    global _interactiveMappingModeGUI
-    global _experimentName
-    global _mappingStatisticsFile
-    global _fullConnectionMatrixFile
-    global _realizedConnectionMatrixFile
-    global _lostConnectionMatrixFile
-    global _setupstart
-
-    if not _calledSetup: 
+    if not g._calledSetup: 
         raise Exception("ERROR: Call function 'setup(...)' first!")
 
-    if _interactiveMappingMode == True :
+    if g._interactiveMappingMode == True :
         import mappinginteractive
         from PyQt4 import QtGui
         _app = QtGui.QApplication(sys.argv)
@@ -827,20 +688,20 @@ def _run_mapping():
     setuptime = 0
     mappingruntime = 0
 
-    if not _calledRunMapping:
+    if not g._calledRunMapping:
         # update hardware configuration
-        if (_neuronsChanged or _synapsesChanged or _connectivityChanged):
-            if _interactiveMappingMode == True :
+        if (g._neuronsChanged or g._synapsesChanged or g._connectivityChanged):
+            if g._interactiveMappingMode == True :
                 toLog(WARNING, "Interactive Mapping mode, show Pre-Processing results not yet fully implemented!")
-                _widget = mappinginteractive.InteractiveMapping( statistics = _statistics,
+                _widget = mappinginteractive.InteractiveMapping( statistics = g._statistics,
                         mappingstep = 0,
-                        mappinglog = _logfile,
-                        experimentname = str(_experimentName),
-                        ignoredb = bool(_preprocessor.getIgnoreDatabase()),
-                        dbip = str(_preprocessor.getDatabaseHost()),
-                        dbport = str(_preprocessor.getDatabasePort()),
-                        jsons = str(_preprocessor.getJSONPathName()) )
-                if _interactiveMappingModeGUI :
+                        mappinglog = g._logfile,
+                        experimentname = str(g._experimentName),
+                        ignoredb = bool(g._preprocessor.getIgnoreDatabase()),
+                        dbip = str(g._preprocessor.getDatabaseHost()),
+                        dbport = str(g._preprocessor.getDatabasePort()),
+                        jsons = str(g._preprocessor.getJSONPathName()) )
+                if g._interactiveMappingModeGUI :
                     _widget.show()
                     _app.exec_()
 
@@ -850,47 +711,47 @@ def _run_mapping():
                     raise Exception("Error: Manual Mapping is not commited. run 'placer.commit()' first!")
 
             # get sizes of data models before mappping
-            if not _mappingStatisticsFile == None :
-                biomodelsize = _statistics.GetBioModelSize()
-                hwmodelsize = _statistics.GetHWModelSize()
+            if not g._mappingStatisticsFile == None :
+                biomodelsize = g._statistics.GetBioModelSize()
+                hwmodelsize = g._statistics.GetHWModelSize()
                 
             # mapping process is initiated here
-            setuptime = time.time() - _setupstart
+            setuptime = time.time() - g._setupstart
             mappingstart = time.time()
-            _mapper.Run()
+            g._mapper.Run()
             mappingruntime = time.time() - mappingstart
 
-            if _interactiveMappingMode == True :
+            if g._interactiveMappingMode == True :
                 toLog(WARNING, "Interactive Mapping mode, show Post-Processing results not yet fully implemented!")
                  
-                _widget = mappinginteractive.InteractiveMapping(statistics = _statistics,
+                _widget = mappinginteractive.InteractiveMapping(statistics = g._statistics,
                         mappingstep = 1,
-                        mappinglog = _logfile,
-                        experimentname = str(_experimentName),
-                        ignoredb = bool(_preprocessor.getIgnoreDatabase()),
-                        dbip = str(_preprocessor.getDatabaseHost()),
-                        dbport = str(_preprocessor.getDatabasePort()),
-                        jsons = str(_preprocessor.getJSONPathName()) )
-                if _interactiveMappingModeGUI :
+                        mappinglog = g._logfile,
+                        experimentname = str(g._experimentName),
+                        ignoredb = bool(g._preprocessor.getIgnoreDatabase()),
+                        dbip = str(g._preprocessor.getDatabaseHost()),
+                        dbport = str(g._preprocessor.getDatabasePort()),
+                        jsons = str(g._preprocessor.getJSONPathName()) )
+                if g._interactiveMappingModeGUI :
                     _widget.show()
                     _app.exec_()
 
-        if not _mappingStatisticsFile == None :
+        if not g._mappingStatisticsFile == None :
             '''
             create a statistics file containing the mapping statistics
             '''
             if not os.path.exists('mapping_statistics'):
                 os.makedirs('mapping_statistics')
-            f = open('mapping_statistics/'+_mappingStatisticsFile,'w')
+            f = open('mapping_statistics/'+g._mappingStatisticsFile,'w')
             f.write("# neurons[abs] synapses[abs] stimuli[abs] stimsynapses[abs] mappingquality[rel] neuronloss[rel] synapseloss[rel] hwefficiency[rel] biomodelsize[Byte] hwmodelsize[Byte] setuptime[s] runtime[s]\n")
-            f.write(str(_statistics.GetBioNeuronCount())+" ")
-            f.write(str(_statistics.GetBioSynapseCount())+" ")
-            f.write(str(_statistics.GetBioStimuliCount())+" ")
-            f.write(str(_statistics.GetBioStimuliSynapseCount())+" ")
-            f.write(str(_statistics.GetMappingQuality())+" ")
-            f.write(str(_statistics.GetNeuronLoss())+" ")
-            f.write(str(_statistics.GetSynapseLoss())+" ")
-            f.write(str(_statistics.GetHardwareEfficiency())+" ")
+            f.write(str(g._statistics.GetBioNeuronCount())+" ")
+            f.write(str(g._statistics.GetBioSynapseCount())+" ")
+            f.write(str(g._statistics.GetBioStimuliCount())+" ")
+            f.write(str(g._statistics.GetBioStimuliSynapseCount())+" ")
+            f.write(str(g._statistics.GetMappingQuality())+" ")
+            f.write(str(g._statistics.GetNeuronLoss())+" ")
+            f.write(str(g._statistics.GetSynapseLoss())+" ")
+            f.write(str(g._statistics.GetHardwareEfficiency())+" ")
             f.write(str(biomodelsize)+" ")
             f.write(str(hwmodelsize)+" ")
             f.write(str(setuptime)+" ")
@@ -898,16 +759,16 @@ def _run_mapping():
             f.write("\n")
             f.close()
 
-        if _fullConnectionMatrixFile is not None:
-            _statistics.writeRawConnectionMatrix(_fullConnectionMatrixFile ,True,True)
-        if _realizedConnectionMatrixFile is not None:
-            _statistics.writeRawConnectionMatrix(_realizedConnectionMatrixFile ,True,False)
-        if _lostConnectionMatrixFile is not None:
-            _statistics.writeRawConnectionMatrix(_lostConnectionMatrixFile ,False,True)
+        if g._fullConnectionMatrixFile is not None:
+            g._statistics.writeRawConnectionMatrix(g._fullConnectionMatrixFile ,True,True)
+        if g._realizedConnectionMatrixFile is not None:
+            g._statistics.writeRawConnectionMatrix(g._realizedConnectionMatrixFile ,True,False)
+        if g._lostConnectionMatrixFile is not None:
+            g._statistics.writeRawConnectionMatrix(g._lostConnectionMatrixFile ,False,True)
 
         # collect hardare configuration
-        _configurator.collectConfiguration()
-        _calledRunMapping = True
+        g._configurator.collectConfiguration()
+        g._calledRunMapping = True
     else:
         toLog(WARNING,"_run_mapping() already called, but can be called only once.")
 
@@ -948,8 +809,8 @@ def build_connect(projection_class, connector_class, static_synapse_class):
     
         """
     
-        if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
-        if _calledRunMapping: raise Exception("ERROR: Cannot connect cells after _run_mapping() has been called")
+        if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+        if g._calledRunMapping: raise Exception("ERROR: Cannot connect cells after _run_mapping() has been called")
         if p > 1.: toLog(WARNING, "A connection probability larger than 1 has been passed as connect argument!")
     
         # check if mapping priority (a value between 0 and 1) has been passed
@@ -976,26 +837,23 @@ def build_connect(projection_class, connector_class, static_synapse_class):
         else:
             raise Exception("ERROR: The only short-term synaptic plasticity type supported by the BrainscaleS hardware is TsodyksMarkram!")
     
-        global _synapsesChanged
-        _synapsesChanged = True
-        global _connectivityChanged
-        _connectivityChanged = True
+        g._synapsesChanged = True
+        g._connectivityChanged = True
     
 #         # Check for proper source cell type:
 #         for src in source:
 #             if not isinstance(src, simulator.ID): raise errors.ConnectionError("ERROR: Source element %s is not of type ID." %str(src))
 #             if type(src.cell) not in supportedNeuronTypes:
 #                 if type(src.cell) in [SpikeSourcePoisson, SpikeSourceArray]:
-#                     global _inputChanged
-#                     _inputChanged = True
+#                     global g._inputChanged
+#                     g._inputChanged = True
 #                 else: raise errors.ConnectionError("ERROR: Element %d of source is of type: %s. It is neither a supported neuron type nor a spike source." %(src, str(src.cellclass)))
 #         # Check for proper target cell type:
 #         for tgt in target:
 #             if not isinstance(tgt, simulator.ID): raise errors.ConnectionError("ERROR: Target element %s is not of type ID." %str(tgt))
 #             if type(tgt.cell) not in supportedNeuronTypes: raise errors.ConnectionError("ERROR: Element %d of target is of type: %s. It is not a supported neuron type." %(src, str(tgt.cellclass)))
 #             tgt.cell.checkConductanceRange('weight',weight)
-    
-        global _preprocessor
+
     
         try:
             if sharedParameters:
@@ -1005,13 +863,13 @@ def build_connect(projection_class, connector_class, static_synapse_class):
                     if rng: # use the supplied RNG
                         rarr = rng.uniform(0.,1.,len(target))
                     else:   # use the default RNG
-                        rarr = _globalRNG.uniform(0.,1.,len(target))
+                        rarr = g._globalRNG.uniform(0.,1.,len(target))
                 for j,tgt in enumerate(target):
                     # evaluate if a connection has to be created
                     if p >= 1. or rarr[j] < p:
                         toLog(DEBUG1, 'Connecting ' + str(src) + ' with ' + str(tgt) + ' and weight ' + str(weight))
                         if not sharedParameters: newParameterSet = _createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
-                        _preprocessor.BioModelInsertSynapse(src.graphModelNode, tgt.graphModelNode, newParameterSet)
+                        g._preprocessor.BioModelInsertSynapse(src.graphModelNode, tgt.graphModelNode, newParameterSet)
 
             connector = connector_class(p_connect=p, rng=rng)
             return projection_class(source, target, connector, receptor_type=receptor_type,
@@ -1028,77 +886,72 @@ connect = build_connect(Projection, FixedProbabilityConnector, StaticSynapse)
 #   Functions for simulation set-up and control
 # ==============================================================================
 
-#run, run_until = common.build_run(simulator)
-#run_for = run
-
 reset = common.build_reset(simulator)
+    
+def build_run(simulator):
+    def run(simtime, callbacks=None):
+    	"""!
+    	Executes the emulation.
+    
+    	Run the simulation for simtime ms.
+    	"""
+    
+    
+    	if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+    
+    	g._simtime = simtime
+    	g._preprocessor.BioModelInsertGlobalParameter("simtime",str(simtime))
+    
+    
+    	# call mapping if not yet called
+    	if not g._calledRunMapping:
+    	    _run_mapping()
+    
+    	# update stimulation data configuration
+    	# provide the spike times as c++ vectors for every input channel
+    	# has to be called AFTER mapping, as it checks whether a PoissonSource
+    	# is realized via L2 or via a background event generator
+    	if g._inputChanged:
+    	    # provide the spike times as c++ vectors for every input channel
+    	    for inputID in g._externalInputs:
+    		assertStimulationSpikeTrain(inputID, regenerate=True)
+    	    g._inputChanged = False
+    
+    	# configure hardware with data from hardware graph
+    	g._configurator.configureAll()
+    
+    	# update change flags
+    	g._neuronsChanged = False
+    	g._synapsesChanged = False
+    	g._connectivityChanged = False
+    
+    	toLog(INFO, "Configuration data transferred to hardware.")
+    
+    	# run the prepared experiment
+    	g._configurator.setDuration(simtime)
+    
+    	toLog(INFO, "Starting to send spike trains to hardware.")
+    	# set input spike trains
+    	for inputID in g._externalInputs:
+    	    if g._preprocessor.BioModelStimulusIsExternal(inputID.graphModelNode):
+    		g._configurator.sendSpikeTrain(inputID.graphModelNode)
+    
+    	toLog(INFO, 'Starting experiment execution.')
+    	toLog(INFO, 'Experiment iteration: %8d' % g._iteration)
+    	#if not g._preprocessor.hardwareAvailable():
+    	    #toLog(INFO, "Running pyNN description on a virtual hardware system!")
+    	g._configurator.runSimulation()
+    
+    	g._iteration += 1
+    	toLog(INFO, 'Experiment iteration finished.')
+    	
+    	simulator.state.run(simtime)
+    	return simulator.state.t
+      
+    return run
 
-
-def run(simtime):
-    """!
-    Executes the emulation.
-
-    Run the simulation for simtime ms.
-    """
-
-    global _neuronsChanged
-    global _synapsesChanged
-    global _connectivityChanged
-    global _inputChanged
-    global _iteration
-    global _mapper
-    global _configurator
-    global _simtime
-    global _runSystemC
-
-    if not _calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
-
-    _simtime = simtime
-    _preprocessor.BioModelInsertGlobalParameter("simtime",str(simtime))
-
-
-    # call mapping if not yet called
-    if not _calledRunMapping:
-        _run_mapping()
-
-    # update stimulation data configuration
-    # provide the spike times as c++ vectors for every input channel
-    # has to be called AFTER mapping, as it checks whether a PoissonSource
-    # is realized via L2 or via a background event generator
-    if _inputChanged:
-        # provide the spike times as c++ vectors for every input channel
-        for inputID in _externalInputs:
-            assertStimulationSpikeTrain(inputID, regenerate=True)
-        _inputChanged = False
-
-    # configure hardware with data from hardware graph
-    _configurator.configureAll()
-
-    # update change flags
-    _neuronsChanged = False
-    _synapsesChanged = False
-    _connectivityChanged = False
-
-    toLog(INFO, "Configuration data transferred to hardware.")
-
-    # run the prepared experiment
-    _configurator.setDuration(simtime)
-
-    toLog(INFO, "Starting to send spike trains to hardware.")
-    # set input spike trains
-    for inputID in _externalInputs:
-        if _preprocessor.BioModelStimulusIsExternal(inputID.graphModelNode):
-            _configurator.sendSpikeTrain(inputID.graphModelNode)
-
-    toLog(INFO, 'Starting experiment execution.')
-    toLog(INFO, 'Experiment iteration: %8d' % _iteration)
-    #if not _preprocessor.hardwareAvailable():
-        #toLog(INFO, "Running pyNN description on a virtual hardware system!")
-    _configurator.runSimulation()
-
-    _iteration += 1
-    toLog(INFO, 'Experiment iteration finished.')
-
+run = build_run(simulator)
+run_for = run
 
 def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     """!
@@ -1117,37 +970,13 @@ def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
 {kwargs}
     """
     # REMARK: the doc for the kwargs is appended to existing docstring direclty after the function definition 
-    global _hardware_list
-    global _useSystemSim
-    global _initializedSystemC
-    global _preprocessor
-    global _mapper
-    global _postprocessor
-    global _configurator
-    global _neuronsChanged
-    global _synapsesChanged
-    global _connectivityChanged
-    global _inputChanged
-    global _externalInputs
-    global _calledSetup
-    global _dt
-    global _rng_seeds
-    global _systemSimTimeStepInPS
-    global _speedupFactor
-    global _tempFolder
-    global toLog
-    global ERROR
-    global WARNING
-    global INFO
-    global DEBUG0
-    global DEBUG1
-    global DEBUG2
-    global DEBUG3
-    global _logfile
-    global _loglevel
-    global _setupstart
-        
-    _setupstart = time.time()
+    
+    g.init()
+    g._dt = simulator.state.dt
+    # make sure all models are on the same time base
+    _set_speedup_factor(g._speedupFactor)   
+    
+    g._setupstart = time.time()
     
     common.setup(timestep, min_delay, max_delay, **extra_params)
     simulator.state.clear()
@@ -1155,71 +984,71 @@ def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     # start of specific setup
     
     if extra_params.has_key('hardware'):
-        _hardware_list = extra_params['hardware']
+        g._hardware_list = extra_params['hardware']
     else:
-        _hardware_list = _default_extra_params['hardware']
+        g._hardware_list = _default_extra_params['hardware']
 
     if 'loglevel' in extra_params.keys():
-        _loglevel = extra_params['loglevel']
+        g._loglevel = extra_params['loglevel']
     else:
-        _loglevel = 1
+        g._loglevel = 1
 
     if 'logfile' in extra_params.keys():
-        _logfile = extra_params['logfile']
+        g._logfile = extra_params['logfile']
     else: 
-        _logfile = 'logfile.txt'
+        g._logfile = 'logfile.txt'
 
     global logger
-    logger = mapping.createLogger(_loglevel, _logfile)
+    logger = mapping.createLogger(g._loglevel, g._logfile)
 
-    _preprocessor = mapping.preprocessor()
-    _mapper = mapping.mapper()
-    _postprocessor = mapping.postprocessor()
+    g._preprocessor = mapping.preprocessor()
+    g._mapper = mapping.mapper()
+    g._postprocessor = mapping.postprocessor()
 
     # check for random number generator seed
     if 'rng_seeds' in extra_params.keys():
-        _rng_seeds = extra_params['rng_seeds']
-        _globalRNG.seed(extra_params['rng_seeds'][0])
+        g._rng_seeds = extra_params['rng_seeds']
+        g._globalRNG.seed(extra_params['rng_seeds'][0])
 
     # print the available hardware version
-    if _preprocessor.hardwareAvailable():
+    if g._preprocessor.hardwareAvailable():
         toLog(INFO, 'Neuromorphic hardware is of type BrainSales HMF!')
     else:
         toLog(INFO, 'The assumed neuromorphic hardware is of type BrainScales HMF, but a real device is not available!')
 
-    if _preprocessor.virtualHardwareAvailable():
+    if g._preprocessor.virtualHardwareAvailable():
         toLog(INFO, 'A virtual hardware, i.e. an executable system simulation, is available!')
 
     # check if system simulation shall be used
     if 'useSystemSim' in extra_params.keys():
         if not isinstance(extra_params['useSystemSim'], bool):
             raise TypeError, 'ERROR: pyNN.setup: argument useSystemSim must be of type bool!'
-        _useSystemSim = extra_params['useSystemSim']
-        if not _preprocessor.virtualHardwareAvailable() and _useSystemSim : 
+        g._useSystemSim = extra_params['useSystemSim']
+        if not g._preprocessor.virtualHardwareAvailable() and g._useSystemSim : 
             raise Exception("ERROR: Argument 'useSystemSim' of command setup() is set to True, but no virtual hardware is available!")
-        if _useSystemSim :
+        if g._useSystemSim :
             toLog(INFO, 'A virtual, i.e. purely simulated hardware system is used instead of a real device!')
 
     # check if speedup factor of the system is specified by user
     if 'speedupFactor' in extra_params.keys():
-        # if yes, we have to scale the parameter ranges of neurons and synapses and update the the global parameter _speedupFactor
+        # if yes, we have to scale the parameter ranges of neurons and synapses and update the the global parameter g._speedupFactor
         _set_speedup_factor(extra_params['speedupFactor'])
 
     _set_trafo_params(extra_params)
 
     # set all changed-flags to true
-    _neuronsChanged = True
-    _synapsesChanged = True
-    _connectivityChanged = True
-    _inputChanged = True
+    g._neuronsChanged = True
+    g._synapsesChanged = True
+    g._connectivityChanged = True
+    g._inputChanged = True
 
     # the time step: for membrane traces used as sampling interval, for system simulation as integration time step
-    _dt = timestep
+    g._dt = timestep
     simulator._dt = timestep
     simulator.state._dt = timestep
 
     # create containers for input sources
-    _externalInputs = []
+    g._externalInputs = []
 
     # create temp folder
     _create_temp_folder(extra_params)
@@ -1231,47 +1060,47 @@ def setup(timestep=0.1, min_delay=0.1, max_delay=10.0, **extra_params):
     _init_preprocessor(extra_params)
 
     # initialize the mapper
-    _mapper.SetHWModel(_preprocessor.GetHWModel())
-    _mapper.SetBioModel(_preprocessor.GetBioModel())
-    _mapper.Initialize()
+    g._mapper.SetHWModel(g._preprocessor.GetHWModel())
+    g._mapper.SetBioModel(g._preprocessor.GetBioModel())
+    g._mapper.Initialize()
 
     # initialize the postprocessor
-    _postprocessor.SetHWModel(_mapper.GetHWModel())
-    _postprocessor.SetBioModel(_mapper.GetBioModel())
-    _postprocessor.Initialize()
+    g._postprocessor.SetHWModel(g._mapper.GetHWModel())
+    g._postprocessor.SetBioModel(g._mapper.GetBioModel())
+    g._postprocessor.Initialize()
 
     _insert_global_hw_params(extra_params)
 
     # create and initialize the hardware configuration controller
     # if we are using the ESS, the configurator can be initialized only once, as the SystemC kernel can not be reset
-    if _useSystemSim:
-        if _initializedSystemC:
+    if g._useSystemSim:
+        if g._initializedSystemC:
             raise Exception("ERROR: The System Simulation can be started only once per python program. Hence multiple calls of function 'setup()' are not possible.")
-        else: _initializedSystemC = True
-    _configurator = mapping.stage2configurator()
+        else: g._initializedSystemC = True
+    g._configurator = mapping.stage2configurator()
 
-    for hardware in _hardware_list:
+    for hardware in g._hardware_list:
         assert isinstance(hardware, dict)
         if hardware['setup'] == "vertical_setup":
             wafer_id = hardware["wafer_id"]
-            _configurator.setUseVerticalSetup(wafer_id, True);
+            g._configurator.setUseVerticalSetup(wafer_id, True);
             # check for IP and number of HICANNs in the jtag chain for vertical setup
             if hardware.has_key('setup_params'):
                 vs_params = hardware['setup_params']
                 if vs_params.has_key('ip'):
-                    _configurator.setIPv4VerticalSetup(wafer_id, vs_params['ip']);
+                    g._configurator.setIPv4VerticalSetup(wafer_id, vs_params['ip']);
                 if vs_params.has_key('num_hicanns'):
-                    _configurator.setNumHicannsVerticalSetup(wafer_id, vs_params['num_hicanns'])
+                    g._configurator.setNumHicannsVerticalSetup(wafer_id, vs_params['num_hicanns'])
         else: # wafer
             wafer_id = hardware["wafer_id"]
-            _configurator.setUseVerticalSetup(wafer_id, False);
+            g._configurator.setUseVerticalSetup(wafer_id, False);
 
-    _configurator.init(_mapper.GetHWModel(), _mapper.GetBioModel(), _useSystemSim, _systemSimTimeStepInPS, _tempFolder)
-    _configurator.setAcceleration(_speedupFactor)
+    g._configurator.init(g._mapper.GetHWModel(), g._mapper.GetBioModel(), g._useSystemSim, g._systemSimTimeStepInPS, g._tempFolder)
+    g._configurator.setAcceleration(g._speedupFactor)
 
     _init_mapping_statistics(extra_params)
 
-    _calledSetup = True
+    g._calledSetup = True
     
     # end of specific setup
     
@@ -1287,40 +1116,40 @@ setup.__doc__ = setup.__doc__.format(kwargs=_default_args.pprint(indent=8))
 
 def list_standard_models():
     """Return a list of all the StandardCellType classes available for this simulator."""
-    return [obj.__name__ for obj in globals().values() if isinstance(obj, type) and issubclass(obj, standardmodels.StandardCellType)]
-
+    standard_cell_types = [obj for obj in globals().values() if isinstance(obj, type) and issubclass(obj, standardmodels.StandardCellType)]
+    for cell_class in standard_cell_types:
+        try:
+            create(cell_class)
+        except Exception, e:
+            if isinstance(e,ParameterValueOutOfRangeError) or e.__str__() == "ERROR: Call function 'setup(...)' first!":
+                pass
+            else:
+                print "Warning: %s is defined, but produces the following error: %s" % (cell_class.__name__, e)
+                standard_cell_types.remove(cell_class)
+    return [obj.__name__ for obj in standard_cell_types]
 
 def end(compatible_output=True):
     """Do any necessary cleaning up before exiting."""
     
     # gain access to the objects which are to be cleaned
-    global _preprocessor
-    global _mapper
-    global _postprocessor
-    global _statistics
-    global _configurator
-    global _calledSetup
-    global _calledRunMapping
-    global _numberOfNeurons
-    global _iteration
     
     # clear list of place instances
     mapper.placer_list = []
     
     # Destroy the mapping and configuration instances
-    if _postprocessor is not None:
+    if g._postprocessor is not None:
         toLog(INFO, "Erasing GraphModels.")
-        _postprocessor.EraseModels()
-    _preprocessor = None
-    _mapper = None
-    _postprocessor = None
-    _statistics = None
-    _configurator = None
-    _calledSetup = False
-    _calledRunMapping = False
+        g._postprocessor.EraseModels()
+    g._preprocessor = None
+    g._mapper = None
+    g._postprocessor = None
+    g._statistics = None
+    g._configurator = None
+    g._calledSetup = False
+    g._calledRunMapping = False
 
     # reset the number of neurons created so far
-    _numberOfNeurons = 0
+    g._numberOfNeurons = 0
     
     for (population, variables, filename) in simulator.state.write_on_end:
         io = get_io(filename)

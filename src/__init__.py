@@ -70,6 +70,6 @@ Other modules:
 """
 
 __version__ = '0.8beta1'
-__all__ = ["common", "random", "nest", "neuron", "pcsim", "brian", "nemo",
+__all__ = ["common", "random", "nest", "neuron", "hardware", "pcsim", "brian", "nemo",
            "moose", "nineml", "recording", "errors", "space", "descriptions",
            "standardmodels", "parameters", "core"]

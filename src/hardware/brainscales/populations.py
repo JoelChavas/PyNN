@@ -3,8 +3,8 @@ from pyNN import common
 from pyNN.standardmodels import StandardCellType
 from pyNN.parameters import ParameterSpace, simplify
 from . import simulator
-from .recording import Recorder
 import pyNN.hardware.brainscales
+from .recording import Recorder
 
 
 
