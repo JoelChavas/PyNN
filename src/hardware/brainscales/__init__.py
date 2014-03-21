@@ -1131,7 +1131,14 @@ def list_standard_models():
 def end(compatible_output=True):
     """Do any necessary cleaning up before exiting."""
     
-    # gain access to the objects which are to be cleaned
+    # reset the number of neurons created so far
+    g._numberOfNeurons = 0
+    
+    for (population, variables, filename) in simulator.state.write_on_end:
+        io = get_io(filename)
+        population.write_data(io, variables)
+    simulator.state.write_on_end = []
+    # should have common implementation of end()
     
     # clear list of place instances
     mapper.placer_list = []
@@ -1147,12 +1154,3 @@ def end(compatible_output=True):
     g._configurator = None
     g._calledSetup = False
     g._calledRunMapping = False
-
-    # reset the number of neurons created so far
-    g._numberOfNeurons = 0
-    
-    for (population, variables, filename) in simulator.state.write_on_end:
-        io = get_io(filename)
-        population.write_data(io, variables)
-    simulator.state.write_on_end = []
-    # should have common implementation of end()

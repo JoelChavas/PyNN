@@ -115,49 +115,41 @@ class Recorder(recording.Recorder):
         else:
             data = numpy.empty((0,2))
         return data
-      
-    def _get(self, gather=False, compatible_output=True, filter=None):
+
+    def _get_all_signals(self, variable, ids, clear=False):
         """!
 
         Return the recorded data as a Numpy array.
 
-        @param gather ...
-        @param compatible_output ...
-        @param filter ...
-
         """
-        # compatible_output is not used, but is needed for compatibility with the nest module.
-        # Does nest really need it?
-        if self.variable == 'spikes':
-            data = numpy.empty((0,2))
-            for id in self.filter_recorded(filter):
-                # for stage1 and for external stimuli we can use the first method
-                if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
-                    spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
+        def _get_spikes(id):
+            if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
+                spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
                 # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
-                else:
-                    spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode)
-                spikes = numpy.array(spiketrain)
-                if len(spikes) > 0:
-                    new_data = numpy.array([numpy.ones(spikes.shape)*id, spikes]).T
-                    data = numpy.concatenate((data, new_data))
-        elif self.variable == 'v':
-            data = numpy.empty((0,3))
-            for id in self.filter_recorded(filter):
-                voltages = numpy.array(g._configurator.receiveVoltageTrace(id.graphModelNode))
-                # compute number of times that are supposed to be returned
-                dt = g._dt
-                simtime = g._simtime
-                num_times = int(simtime/dt) +1
-                times = numpy.arange(0.,num_times*dt, dt)
-                ids = numpy.ones(num_times)*id
-                # Format: 'id t v'
-                new_data = numpy.array([ids,times,voltages])
-                data = numpy.concatenate((data, new_data.transpose()))
-            #raise NotImplementedError("Recording of %s not implemented." % self.variable)
+            else:
+                spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode) 
+            return numpy.array(spiketrain)
+        
+        if variable == 'spikes':
+            if len(ids) > 0:
+                data = numpy.vstack([_get_spikes(id) for id in ids]).T
+            else:
+                data = numpy.array([])
+        elif variable == 'v':
+            if len(ids) > 0:
+                data = numpy.vstack([numpy.array(g._configurator.receiveVoltageTrace(id.graphModelNode)) for id in ids]).T
+            else:
+                data = numpy.array([])
         else:
             raise Exception("Recording of %s not implemented." % self.variable)
         #if gather and simulator.state.num_processes > 1:
         #    data = recording.gather(data)
         return data
+    
+    @staticmethod
+    def find_units(variable):
+        if variable in recording.UNITS_MAP:
+            return recording.UNITS_MAP[variable]
+        else:
+            raise Exception("units unknown")
 
