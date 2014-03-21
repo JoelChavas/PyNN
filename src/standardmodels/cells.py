@@ -129,6 +129,9 @@ class IF_cond_exp(StandardCellType):
         'gsyn_exc': 0.0,
         'gsyn_inh': 0.0,
     }
+    
+    def __init__(self,**parameters):
+        super(IF_cond_exp, self).__init__(**parameters)
 
 class IF_cond_exp_gsfa_grr(StandardCellType):
     """
@@ -372,3 +375,5 @@ class SpikeSourceArray(StandardCellType):
     recordable = ['spikes']
     injectable = False
     receptor_types = ()
+    def __init__(self,**parameters):
+        super(SpikeSourceArray, self).__init__(**parameters)

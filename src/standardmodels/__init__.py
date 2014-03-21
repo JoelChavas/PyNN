@@ -59,6 +59,9 @@ class StandardModelType(models.BaseModelType):
     translations = {}
     extra_parameters = {}
 
+    def __init__(self,**parameters):
+        super(StandardModelType, self).__init__(**parameters)
+        
     @property
     def native_parameters(self):
         """
@@ -135,6 +138,9 @@ class StandardCellType(StandardModelType, models.BaseCellType):
     recordable    = ['spikes', 'v', 'gsyn']
     receptor_types = ('excitatory', 'inhibitory')
     always_local  = False # override for NEST spike sources
+    
+    def __init__(self,**parameters):
+        super(StandardCellType, self).__init__(**parameters)
 
 
 class StandardCurrentSource(StandardModelType, models.BaseCurrentSource):

@@ -60,7 +60,7 @@ class Population(common.Population):
     def _create_cells(self):
         # this method should never be called more than once
         # perhaps should check for that
-        buf = pyNN.hardware.brainscales._create(self.celltype, None, self.size, cell_tag=self.label)
+        buf = pyNN.hardware.brainscales._create(self.celltype, self.celltype.parameter_space._parameters, self.size, cell_tag=self.label)
         if type(buf) != type([]): buf = [buf]
         self.all_cells = buf
         for c in self.all_cells:     # set parent

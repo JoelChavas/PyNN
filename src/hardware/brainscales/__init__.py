@@ -25,7 +25,7 @@ import recording
 from . import simulator
 
 # hardware specific PyNN modules
-from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson, supportedNeuronTypes
+from .standardmodels.cells import EIF_cond_exp_isfa_ista, IF_cond_exp, SpikeSourcePoisson, SpikeSourceArray, supportedNeuronTypes
 from .standardmodels.synapses import TsodyksMarkramMechanism, StaticSynapse
 from .populations import Recorder, Population, PopulationView, Assembly
 from .projections import Projection
@@ -89,7 +89,7 @@ def _set_speedup_factor(speedup):
     """
     g._speedupFactor = speedup
     # scaling parameter ranges
-    for model in [EIF_cond_exp_isfa_ista,IF_cond_exp,SpikeSourcePoisson,TsodyksMarkramMechanism]:
+    for model in [EIF_cond_exp_isfa_ista,IF_cond_exp,SpikeSourcePoisson,SpikeSourceArray,TsodyksMarkramMechanism]:
         model.scaleParameterRangesTime(g._speedupFactor)
     # also update the allowed periods of PeriodicCurrentSource
     PeriodicCurrentSource.ALLOWED_PERIODS = FG_ALLOWED_PERIODS(g._speedupFactor)
@@ -349,6 +349,49 @@ def _init_mapping_statistics(extra_params):
         g._statistics.SetBioModel(g._mapper.GetBioModel())
         g._statistics.Initialize()
 
+def pynnHardwarePoisson(start, duration, freq, prng):
+    """!
+
+    Returns a poisson spike train.
+
+    Returns an STL vector containing a Poisson type spike train that is
+    to be sent to the hardware with events given in msec.
+
+        @param start    - start of the firing activity, given in ms.
+        @param duration - duration of the firing activity, given in ms.
+        @param freq     - frequency of the Poissonian firing activity, given in Hz.
+        @param prng     - a random number generator that supports the functions 'poisson' and 'uniform'.
+
+        @return st     - STL vector of spike times representing doubles
+    """
+
+    # determine number of spikes
+    N = prng.poisson(duration*freq/1000.0)
+    p = prng.uniform(start,start+duration,N)
+    p = p.tolist()
+    p.sort()
+
+    st = mappingutilities.vectorDouble()
+    st.extend(p)
+    return st
+
+
+def pynnHardwareSpikeArray(spike_times):
+    """!
+    Returns a spike train.
+
+    Returns an STL vector containing a spike train that is
+    to be sent to the hardware with events given in msec.
+
+        @param spike_times - an iterable array with spike times given in msec.
+
+        @return st - STL vector of spike times representing doubles
+    """
+
+    st = mappingutilities.vectorDouble()
+    st.extend(spike_times)
+    return st
+
 class NoDelayWarning():
     """!
     Gives a Warning that there are currently no delay available on the hardware.
@@ -361,6 +404,35 @@ class NoDelayWarning():
             toLog(WARNING,"Synaptic Delays are currently not adjustable in the hardware. They will amount to values between {0} and {1} ms for your speedup factor of {2}.\n(This WARNING is raised only once!)\n".format(delay_range[0], delay_range[1], g._speedupFactor))
             NoDelayWarning.warning_called = True
 
+
+def _createStimulusParameterSet(cellclass,cellparams=None):
+    """!
+    Creates a new GraphModel parameter set node for a specific stimulus or stimuli group.
+
+        @param cellclass  - the cell class for which a parameter set shall be created.
+        @param cellparams - a dictionary with the parameters that shall be inserted into the GraphModel.
+    """
+
+    if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+
+    if cellclass in [SpikeSourcePoisson, SpikeSourceArray] or isinstance(cellclass,SpikeSourcePoisson) or isinstance(cellclass,SpikeSourceArray):
+        newParameterSet = g._preprocessor.BioModelInsertNeuronParameterSet(str(g._numberOfNeuronParameterSets))
+        g._numberOfNeuronParameterSets += 1
+
+        # check if parameters are provided
+        if cellparams: parameters = cellparams
+        else: parameters = cellclass.default_parameters
+
+        for p in parameters.keys():
+            # spike times will be written to graph model during run() call
+            if not p=='spike_times':
+                toLog(DEBUG0, 'Adding parameter ' + str(p) + ' with value ' + str(parameters[p]))
+                g._preprocessor.BioModelInsertParameter(newParameterSet, p, str(parameters[p]))
+
+    else:
+        exceptionString = "ERROR: Wrong cell type given to _createStimulusParameterSet!"
+        raise Exception(exceptionString)
+    return newParameterSet
 
 def _createSynapseParameterSet(weight=None, delay=None, synapse_type=None, mapping_priority=None, stp_parameters=None):
     """!
@@ -411,6 +483,47 @@ def _createSynapseParameterSet(weight=None, delay=None, synapse_type=None, mappi
     return newParameterSet
 
 
+def assertStimulationSpikeTrain(inputID, regenerate=True):
+    """!
+    Asserts that a spike train is available for the external input with the ID inputID.
+
+    The format of the spike train is an STL vector of doubles and will be attached to the input's GraphModel Node.
+
+        @param inputID    - an ID of the spike source the spike train of which shall be returned.
+        @param regenerate - if this boolean is false, the spike trains that possibly already have been generated in previous
+                            runs will be used, no new vectors will be generated. Otherwise, the return vectors will be
+                            fully re-generated.
+    """
+
+    global _globalRNG
+    global _preprocessor
+    global _simtime
+
+    # get pyNN cell object from ID
+    pynnObject = inputID.cell
+
+    # the graphModel node from ID
+    gmNode = inputID.graphModelNode
+
+    # generate / extract spike times
+    if pynnObject.__class__.__name__ == 'SpikeSourcePoisson':
+        if regenerate or (not inputID.has_spikes):
+            # only generate spike train, if stimulus is provided externally and not via background event generator.
+            if _preprocessor.BioModelStimulusIsExternal(gmNode):
+                dur = pynnObject.parameters['duration']
+                if dur > _simtime:
+                    dur = _simtime
+                st = pynnHardwarePoisson(pynnObject.parameters['start'], dur, pynnObject.parameters['rate'], _globalRNG)
+                #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
+                _preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
+                inputID.has_spikes = True
+    elif pynnObject.__class__.__name__ == 'SpikeSourceArray':
+        if regenerate or (not inputID.has_spikes):
+            st = pynnHardwareSpikeArray(pynnObject.parameter_space._parameters['spike_times'])
+            #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
+            g._preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
+            inputID.has_spikes = True
+            
 def _createNeuronParameterSet(cellclass,cellparams=None):
     """!
     Creates a new GraphModel parameter set node for a specific neuron or neuron group.
@@ -628,19 +741,19 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         if n == 1: return returnList[0]
         else: return returnList
 
-    elif cellclass == SpikeSourcePoisson or cellclass == SpikeSourceArray:
+    elif cellclass == SpikeSourcePoisson or cellclass == SpikeSourceArray or isinstance(cellclass, SpikeSourceArray):
         returnList = []
         if cellparams and cellparams.has_key('spike_times'):
             # check type of spike times container
-            if not hasattr(cellparams['spike_times'],'__len__'): raise TypeError("ERROR: Value of 'spike_times' has to be iterable!")
+#            if not hasattr(cellparams['spike_times'],'__len__'): raise TypeError("ERROR: Value of 'spike_times' has to be iterable!")
             # assure that type of spike time list is a python list. If it was a numpy array, the str value will have no commas,
             # which causes problems during mapping analysis
-            cellparams['spike_times'] = list(cellparams['spike_times'])
+            cellparams['spike_times'] = list(cellparams['spike_times'].base_value.value)
         for i in xrange(n):
             cell_tag = cell_tag_base
-            pynnSpikeSource = cellclass(cellparams)
+            pynnSpikeSource = cellclass
             if (i == 0) or (not sharedParameters):
-                newParameterSet = _createStimulusParameterSet(cellclass, pynnSpikeSource.parameters)
+                newParameterSet = _createStimulusParameterSet(cellclass)
                 g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", cellclass.__name__)
             newExternalInputSize = numpy.size(g._externalInputs)+1
             index = -newExternalInputSize

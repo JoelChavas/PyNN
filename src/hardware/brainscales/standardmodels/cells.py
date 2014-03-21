@@ -134,12 +134,9 @@ class IF_cond_exp(cells.IF_cond_exp, HardwareNeuronRangeChecker):
     # hardware capacitance of HICANN
     c_hw = BIG_HW_CAP
 
-    def __init__(self,parameters=None):
-        cells.IF_cond_exp.__init__(self)
-        #XXX this check on the reverse_translate function?
-        if parameters:
-            checked_params = self.reverse_translate(parameters)
-            self.checkParameterRanges(checked_params)
+    def __init__(self,**parameters):
+        super(IF_cond_exp, self).__init__(**parameters)
+        self.checkParameterRanges(self.parameter_space._parameters)
 
 supportedNeuronTypes.append(IF_cond_exp)
 
@@ -181,17 +178,21 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson, HardwareRangeChecker):
 
 class SpikeSourceArray(cells.SpikeSourceArray, HardwareRangeChecker):
     __doc__ = cells.SpikeSourceArray.__doc__
+    __name__ = "SpikeSourceArray"
 
     translations = build_translations(
         ('spike_times', 'spike_times')
     )
     recordable = ['spikes']
+    _speedupFactor = 10000. # speedup factor for which the current parameter ranges are valid
+    parameter_ranges = {}
 
-    def __init__(self,parameters):
-
+    def __init__(self,**parameters):
         self.index = None
         self.hardwareSpikeTimes = None
-        cells.SpikeSourceArray.__init__(self,parameters)
+        super(SpikeSourceArray, self).__init__(**parameters)
+        self.checkParameterRanges(self.parameter_space._parameters)
+        
     def checkParameterRanges(self, parameters):
         """!
 
