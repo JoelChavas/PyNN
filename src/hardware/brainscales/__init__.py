@@ -729,9 +729,17 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         for i in xrange(n):
             cell_tag = cell_tag_base
             pynnNeuronClass = type(cellclass)
-            pynnNeuron = pynnNeuronClass(v_rest=-50)
+            pynnNeuron = pynnNeuronClass()
             if (i == 0) or (not sharedParameters):
-                newParameterSet = _createNeuronParameterSet(pynnNeuronClass)
+                # transforms a dictionary with lazyarray values (pynnNeuron.parameter_space._parameters, and cellparams) into a dictionary with real values
+                # before giving it to the _createNeuronParameterSet
+		#TODO: this part should be put into _createNeuronParameterSet
+                pynnNeuronParam = {}
+                for key in pynnNeuron.parameter_space._parameters:
+		    pynnNeuronParam[key] = pynnNeuron.parameter_space._parameters[key].base_value
+		for key in cellparams:
+		    pynnNeuronParam[key] = cellparams[key].base_value
+                newParameterSet = _createNeuronParameterSet(pynnNeuronClass, pynnNeuronParam)
                 g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", pynnNeuronClass.__name__)
                 if cell_tag_base:
                     g._preprocessor.BioModelInsertParameter(newParameterSet, "pop_label", cell_tag_base)
