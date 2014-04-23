@@ -14,6 +14,7 @@ This simulator implements the PyNN API, for hardware and hardware simulators.
 import time
 import logging
 import tempfile
+import sys
 
 # common PyNN modules
 from pyNN import common, standardmodels
@@ -727,10 +728,11 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         returnList = []
         for i in xrange(n):
             cell_tag = cell_tag_base
-            pynnNeuron = cellclass
+            pynnNeuronClass = type(cellclass)
+            pynnNeuron = pynnNeuronClass(v_rest=-50)
             if (i == 0) or (not sharedParameters):
-                newParameterSet = _createNeuronParameterSet(cellclass)
-                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", "IF_cond_exp")
+                newParameterSet = _createNeuronParameterSet(pynnNeuronClass)
+                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", pynnNeuronClass.__name__)
                 if cell_tag_base:
                     g._preprocessor.BioModelInsertParameter(newParameterSet, "pop_label", cell_tag_base)
             bioGraphNeuron = g._preprocessor.BioModelInsertSpikeRecordableNeuron(str(g._numberOfNeurons))
@@ -1027,7 +1029,7 @@ def build_run(simulator):
     	if g._inputChanged:
     	    # provide the spike times as c++ vectors for every input channel
     	    for inputID in g._externalInputs:
-    		assertStimulationSpikeTrain(inputID, regenerate=True)
+                assertStimulationSpikeTrain(inputID, regenerate=True)
     	    g._inputChanged = False
     
     	# configure hardware with data from hardware graph

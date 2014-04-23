@@ -111,7 +111,7 @@ class IF_cond_exp(StandardCellType):
     """
     
     default_parameters = {
-        'v_rest'     : -65.0,   # Resting membrane potential in mV. 
+        'v_rest'     : -60.0,   # Resting membrane potential in mV. 
         'cm'         : 1.0,     # Capacity of the membrane in nF
         'tau_m'      : 20.0,    # Membrane time constant in ms.
         'tau_refrac' : 0.1,     # Duration of refractory period in ms.
@@ -125,7 +125,7 @@ class IF_cond_exp(StandardCellType):
     }
     recordable = ['spikes', 'v', 'gsyn_exc', 'gsyn_inh']
     default_initial_values = {
-        'v': -65.0, #'v_rest',
+        'v': -63.0, #'v_rest',
         'gsyn_exc': 0.0,
         'gsyn_inh': 0.0,
     }
