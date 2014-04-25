@@ -20,6 +20,7 @@ import sys
 from pyNN import common, standardmodels
 from pyNN.connectors import *
 from pyNN.recording import *
+from pyNN.parameters import ParameterSpace
 import recording
 
 # hardware specific python modules
@@ -729,7 +730,7 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         for i in xrange(n):
             cell_tag = cell_tag_base
             pynnNeuronClass = type(cellclass)
-            pynnNeuron = pynnNeuronClass()
+            pynnNeuron = pynnNeuronClass(**cellparams)
             if (i == 0) or (not sharedParameters):
                 # transforms a dictionary with lazyarray values (pynnNeuron.parameter_space._parameters, and cellparams) into a dictionary with real values
                 # before giving it to the _createNeuronParameterSet
@@ -737,10 +738,8 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
                 pynnNeuronParam = {}
                 param = pynnNeuron.translate(pynnNeuron.parameter_space)._parameters
                 for key in param:
-		    pynnNeuronParam[key] = param[key].base_value
-		#TODO: parameter passed is NOT translated
-		for key in cellparams:
-		    pynnNeuronParam[key] = cellparams[key].base_value
+		    param[key].shape =  (1,)
+		    pynnNeuronParam[key] = param[key].evaluate()[0]
                 newParameterSet = _createNeuronParameterSet(pynnNeuronClass, pynnNeuronParam)
                 g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", pynnNeuronClass.__name__)
                 if cell_tag_base:
