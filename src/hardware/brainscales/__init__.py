@@ -735,8 +735,10 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
                 # before giving it to the _createNeuronParameterSet
 		#TODO: this part should be put into _createNeuronParameterSet
                 pynnNeuronParam = {}
-                for key in pynnNeuron.parameter_space._parameters:
-		    pynnNeuronParam[key] = pynnNeuron.parameter_space._parameters[key].base_value
+                param = pynnNeuron.translate(pynnNeuron.parameter_space)._parameters
+                for key in param:
+		    pynnNeuronParam[key] = param[key].base_value
+		#TODO: parameter passed is NOT translated
 		for key in cellparams:
 		    pynnNeuronParam[key] = cellparams[key].base_value
                 newParameterSet = _createNeuronParameterSet(pynnNeuronClass, pynnNeuronParam)
