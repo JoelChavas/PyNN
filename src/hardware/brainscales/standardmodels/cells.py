@@ -157,7 +157,7 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson, HardwareRangeChecker):
             }
     recordable = ['spikes']
 
-    def __init__(self,parameters):
+    def __init__(self,**parameters):
         random = True
         if parameters is not None:
             params = parameters.copy()
@@ -170,10 +170,10 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson, HardwareRangeChecker):
             params = {}
         self.index = None
         self.hardwareSpikeTimes = None
-        cells.SpikeSourcePoisson.__init__(self,params)
-        checked_params = self.reverse_translate(self.parameters)
-        self.checkParameterRanges(checked_params)
-        self.parameters['random'] = int(random)
+        cells.SpikeSourcePoisson.__init__(self,**params)
+        checked_params = self.reverse_translate(self.parameter_space)
+        self.checkParameterRanges(checked_params._parameters)
+        self.parameter_space._parameters['random'] = int(random)
 
 
 class SpikeSourceArray(cells.SpikeSourceArray, HardwareRangeChecker):

@@ -41,12 +41,13 @@ setup(loglevel=2, useSystemSim=True, hardware=hardwareSetup['one-hicann'],timest
 # 
 # run(200.0)
 
-ifcell  = IF_cond_exp(cm=0.2, i_offset=0.0, tau_refrac=3.0, v_thresh=-51.0, tau_syn_E=5.0, tau_syn_I=5.0, v_reset=-70.0, e_rev_E=0., e_rev_I=-100., v_rest=-50.)
+ifcell  = IF_cond_exp(cm=0.2, i_offset=0.0, tau_refrac=3.0, v_thresh=-51.0, tau_syn_E=5.0, tau_syn_I=5.0, v_reset=-70.0, e_rev_E=0., e_rev_I=-100., v_rest=-50., tau_m=20.)
 popcell2 = Population(1,ifcell)
+#popcell2 = Population(1,ifcell,initial_values={'v':-99})
 #popcell1 = Population(1, ifcell)
 spike_sourceE = create(SpikeSourceArray, {'spike_times': [float(i) for i in range(5,105,10)]})
 spike_sourceI = create(SpikeSourceArray, {'spike_times': [float(i) for i in range(155,255,10)]})
-popcell2.initialize(v=0)
+#popcell2.initialize(v=-99)
 #popcell1.initialize(v=0)
 #conn = connect(popcell1, popcell2, weight=0.04, receptor_type='excitatory', delay=2.0)
 #conn = connect(popcell2, popcell1, weight=0.04, receptor_type='excitatory', delay=2.0)
@@ -55,7 +56,7 @@ connI = connect(spike_sourceI, popcell2, weight=0.02, receptor_type='inhibitory'
 filename = normalized_filename("Results", "IF_cond_exp", "pkl", simulator_name)
 record(['v', 'spikes'], popcell2, filename,
        annotations={'script_name': __file__})
-run(200.0)
+run(260.0)
 
 end()
 

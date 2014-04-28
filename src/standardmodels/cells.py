@@ -345,6 +345,9 @@ class SpikeSourcePoisson(StandardCellType):
     recordable = ['spikes']
     injectable = False
     receptor_types = ()
+    
+    def __init__(self,**parameters):
+        super(SpikeSourcePoisson, self).__init__(**parameters)
 
 
 class SpikeSourceInhGamma(StandardCellType):

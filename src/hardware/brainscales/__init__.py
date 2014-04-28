@@ -752,7 +752,7 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         if n == 1: return returnList[0]
         else: return returnList
 
-    elif cellclass == SpikeSourcePoisson or cellclass == SpikeSourceArray or isinstance(cellclass, SpikeSourceArray):
+    elif cellclass == SpikeSourcePoisson or cellclass == SpikeSourceArray or isinstance(cellclass, SpikeSourceArray) or isinstance(cellclass, SpikeSourcePoisson):
         returnList = []
         if cellparams and cellparams.has_key('spike_times'):
             # check type of spike times container
@@ -765,7 +765,7 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
             pynnSpikeSource = cellclass
             if (i == 0) or (not sharedParameters):
                 newParameterSet = _createStimulusParameterSet(cellclass)
-                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", cellclass.__name__)
+                g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", cellclass.__class__.__name__)
             newExternalInputSize = numpy.size(g._externalInputs)+1
             index = -newExternalInputSize
             bioGraphSpikeSourceNode = g._preprocessor.BioModelInsertStimulus(str(index))
