@@ -97,8 +97,8 @@ class HardwareRangeChecker(object):
         """
 
         # check parameter ranges
-        for (key,value) in parameters.iteritems():
-            check_parameter_range(key,value.base_value,self.parameter_ranges[key])
+        for key in parameters:
+            check_parameter_range(key,parameters[key],self.parameter_ranges[key])
 
     @classmethod
     def scaleParameterRangesTime(cls, new_speedup):

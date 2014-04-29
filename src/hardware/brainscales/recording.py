@@ -102,14 +102,16 @@ class Recorder(recording.Recorder):
         """
         raise NotImplementedError("Recording reset is not currently supported for pyNN.hardware.brainscales")
 
+    def _get_spikes(self, id):
+	if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
+	    spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
+	    # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
+	else:
+	    spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode) 
+	return numpy.array(spiketrain)
+
     def _get_spiketimes(self, id):
-        # for stage1 and for external stimuli we can use the first method
-        if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
-            spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
-        # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
-        else:
-            spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode)
-        spikes = numpy.array(spiketrain)
+        spikes = self._get_spikes(id)
         if len(spikes) > 0:
             data = numpy.array([numpy.ones(spikes.shape)*id, spikes]).T
         else:
@@ -122,17 +124,10 @@ class Recorder(recording.Recorder):
         Return the recorded data as a Numpy array.
 
         """
-        def _get_spikes(id):
-            if (id < 0 and g._preprocessor.BioModelStimulusIsExternal(id.graphModelNode)):
-                spiketrain = g._postprocessor.BioModelReceiveRecordedSpikes(id.graphModelNode)
-                # for stage2 real neurons and stimuli mapped onto background generators we receive the spikes via the configurator
-            else:
-                spiketrain = g._configurator.receiveSpikeTrain(id.graphModelNode) 
-            return numpy.array(spiketrain)
         
         if variable == 'spikes':
             if len(ids) > 0:
-                data = numpy.vstack([_get_spikes(id) for id in ids]).T
+                data = numpy.vstack([self._get_spikes(id) for id in ids]).T
             else:
                 data = numpy.array([])
         elif variable == 'v':
@@ -152,4 +147,12 @@ class Recorder(recording.Recorder):
             return recording.UNITS_MAP[variable]
         else:
             raise Exception("units unknown")
+
+    def _local_count(self, variable, filter_ids=None):  
+        N = {}
+        filtered_ids = self.filter_recorded(variable, filter_ids)
+	if len(filtered_ids) > 0:
+	    for id in filtered_ids:
+	        N[id] = len(self._get_spikes(id))
+        return N
 

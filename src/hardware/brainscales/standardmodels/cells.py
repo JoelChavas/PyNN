@@ -136,7 +136,9 @@ class IF_cond_exp(cells.IF_cond_exp, HardwareNeuronRangeChecker):
 
     def __init__(self,**parameters):
         super(IF_cond_exp, self).__init__(**parameters)
-        self.checkParameterRanges(self.parameter_space._parameters)
+        self.parameter_space.shape = (1,)
+        self.parameter_space.evaluate(simplify=True)
+        self.checkParameterRanges(self.parameter_space.as_dict())
 
 supportedNeuronTypes.append(IF_cond_exp)
 
