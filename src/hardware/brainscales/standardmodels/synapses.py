@@ -21,6 +21,7 @@ from math import *
 import types
 from ..range_checker import HardwareRangeChecker
 import pyNN.hardware.brainscales
+from ..simulator import state
 
 class STDPMechanism(synapses.STDPMechanism):
     __doc__ = synapses.STDPMechanism.__doc__

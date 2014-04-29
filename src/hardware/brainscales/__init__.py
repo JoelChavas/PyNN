@@ -368,8 +368,8 @@ def pynnHardwarePoisson(start, duration, freq, prng):
     """
 
     # determine number of spikes
-    N = prng.poisson(duration*freq/1000.0)
-    p = prng.uniform(start,start+duration,N)
+    N = prng.poisson(duration*freq.base_value/1000.0)
+    p = prng.uniform(start.base_value,start.base_value+duration,N)
     p = p.tolist()
     p.sort()
 
@@ -497,10 +497,6 @@ def assertStimulationSpikeTrain(inputID, regenerate=True):
                             fully re-generated.
     """
 
-    global _globalRNG
-    global _preprocessor
-    global _simtime
-
     # get pyNN cell object from ID
     pynnObject = inputID.cell
 
@@ -511,13 +507,13 @@ def assertStimulationSpikeTrain(inputID, regenerate=True):
     if pynnObject.__class__.__name__ == 'SpikeSourcePoisson':
         if regenerate or (not inputID.has_spikes):
             # only generate spike train, if stimulus is provided externally and not via background event generator.
-            if _preprocessor.BioModelStimulusIsExternal(gmNode):
-                dur = pynnObject.parameters['duration']
-                if dur > _simtime:
-                    dur = _simtime
-                st = pynnHardwarePoisson(pynnObject.parameters['start'], dur, pynnObject.parameters['rate'], _globalRNG)
+            if g._preprocessor.BioModelStimulusIsExternal(gmNode):
+                dur = pynnObject.parameter_space._parameters['duration']
+                if dur > g._simtime:
+                    dur = g._simtime
+                st = pynnHardwarePoisson(pynnObject.parameter_space._parameters['start'], dur, pynnObject.parameter_space._parameters['rate'], g._globalRNG)
                 #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
-                _preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
+                g._preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
                 inputID.has_spikes = True
     elif pynnObject.__class__.__name__ == 'SpikeSourceArray':
         if regenerate or (not inputID.has_spikes):
