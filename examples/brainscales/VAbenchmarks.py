@@ -95,7 +95,8 @@ elif options.benchmark == "CUBA":
 
 # === Build the network ========================================================
 
-extra = {'loglevel':2, 'useSystemSim':True, 'hardware':sim.hardwareSetup['small'], 'threads' : threads,
+extra = {'loglevel':2, 'useSystemSim':True, 'hardware':sim.hardwareSetup['small'], 
+	 'threads' : threads,
          'filename': "va_%s.xml" % options.benchmark,
          'label': 'VA'}
 if options.simulator == "neuroml":
@@ -155,6 +156,7 @@ print "%s Setting up recording..." % node_id
 exc_cells.record('spikes')
 inh_cells.record('spikes')
 exc_cells[0, 1].record('v')
+exc_cells[0, 1].record('gsyn_exc')
 
 buildCPUTime = timer.diff()
 
@@ -191,17 +193,19 @@ inh_cells.write_data(
     annotations={'script_name': __file__})
 writeCPUTime = timer.diff()
 
-connections = "%d e→e  %d e→i  %d i→e  %d i→i" % (connections['e2e'].size(),
+str_connections = "%d e→e  %d e→i  %d i→e  %d i→i" % (connections['e2e'].size(),
                                                   connections['e2i'].size(),
                                                   connections['i2e'].size(),
                                                   connections['i2i'].size())
+str_stim_connections = "%d stim->e  %d stim->i" % (connections['ext2e'].size(),connections['ext2i'].size())
 
 if node_id == 0:
     print "\n--- Vogels-Abbott Network Simulation ---"
     print "Nodes                  : %d" % np
     print "Simulation type        : %s" % options.benchmark
     print "Number of Neurons      : %d" % n
-    print "Number of Synapses     : %s" % connections
+    print "Number of Synapses     : %s" % str_connections
+    print "Number of inputs       : %s" % str_stim_connections
     print "Excitatory conductance : %g nS" % Gexc
     print "Inhibitory conductance : %g nS" % Ginh
     print "Excitatory rate        : %g Hz" % (E_count*1000.0/tstop,)
