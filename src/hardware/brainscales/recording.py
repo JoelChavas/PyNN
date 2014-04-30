@@ -113,9 +113,9 @@ class Recorder(recording.Recorder):
     def _get_spiketimes(self, id):
         spikes = self._get_spikes(id)
         if len(spikes) > 0:
-            data = numpy.array([numpy.ones(spikes.shape)*id, spikes]).T
+            data = spikes
         else:
-            data = numpy.empty((0,2))
+            data = numpy.empty((0))
         return data
 
     def _get_all_signals(self, variable, ids, clear=False):

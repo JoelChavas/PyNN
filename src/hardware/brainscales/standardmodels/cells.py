@@ -174,8 +174,13 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson, HardwareRangeChecker):
         self.hardwareSpikeTimes = None
         cells.SpikeSourcePoisson.__init__(self,**params)
         checked_params = self.reverse_translate(self.parameter_space)
-        self.checkParameterRanges(checked_params._parameters)
-        self.parameter_space._parameters['random'] = int(random)
+        checked_params.shape=(1,)
+        checked_params.evaluate(simplify=True)
+        self.checkParameterRanges(checked_params.as_dict())
+        self.parameter_space.schema['random'] = type(int(0))
+        self.parameter_space.update(random=int(random))
+        self.parameter_space.shape=(1,)
+        self.parameter_space.evaluate(simplify=True)
 
 
 class SpikeSourceArray(cells.SpikeSourceArray, HardwareRangeChecker):

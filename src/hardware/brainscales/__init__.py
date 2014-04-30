@@ -368,8 +368,8 @@ def pynnHardwarePoisson(start, duration, freq, prng):
     """
 
     # determine number of spikes
-    N = prng.poisson(duration*freq.base_value/1000.0)
-    p = prng.uniform(start.base_value,start.base_value+duration,N)
+    N = prng.poisson(duration*freq/1000.0)
+    p = prng.uniform(start,start+duration,N)
     p = p.tolist()
     p.sort()
 
@@ -508,16 +508,16 @@ def assertStimulationSpikeTrain(inputID, regenerate=True):
         if regenerate or (not inputID.has_spikes):
             # only generate spike train, if stimulus is provided externally and not via background event generator.
             if g._preprocessor.BioModelStimulusIsExternal(gmNode):
-                dur = pynnObject.parameter_space._parameters['duration']
+                dur = pynnObject.parameter_space['duration']
                 if dur > g._simtime:
                     dur = g._simtime
-                st = pynnHardwarePoisson(pynnObject.parameter_space._parameters['start'], dur, pynnObject.parameter_space._parameters['rate'], g._globalRNG)
+                st = pynnHardwarePoisson(pynnObject.parameter_space['start'], dur, pynnObject.parameter_space['rate'], g._globalRNG)
                 #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
                 g._preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
                 inputID.has_spikes = True
     elif pynnObject.__class__.__name__ == 'SpikeSourceArray':
         if regenerate or (not inputID.has_spikes):
-            st = pynnHardwareSpikeArray(pynnObject.parameter_space._parameters['spike_times'])
+            st = pynnHardwareSpikeArray(pynnObject.parameter_space['spike_times'])
             #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
             g._preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
             inputID.has_spikes = True
@@ -728,15 +728,13 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
             pynnNeuronClass = type(cellclass)
             pynnNeuron = pynnNeuronClass(**cellparams)
             if (i == 0) or (not sharedParameters):
-                # transforms a dictionary with lazyarray values (pynnNeuron.parameter_space._parameters, and cellparams) into a dictionary with real values
+                # transforms a dictionary with lazyarray values (pynnNeuron.parameter_space, and cellparams) into a dictionary with real values
                 # before giving it to the _createNeuronParameterSet
 		#TODO: this part should be put into _createNeuronParameterSet
                 pynnNeuronParam = {}
-                param = pynnNeuron.translate(pynnNeuron.parameter_space)._parameters
-                for key in param:
-		    param[key].shape =  (1,)
-		    pynnNeuronParam[key] = param[key].evaluate()[0]
-                newParameterSet = _createNeuronParameterSet(pynnNeuronClass, pynnNeuronParam)
+                param = pynnNeuron.translate(pynnNeuron.parameter_space)
+                param.evaluate(simplify=True)
+                newParameterSet = _createNeuronParameterSet(pynnNeuronClass, param.as_dict())
                 g._preprocessor.BioModelInsertParameter(newParameterSet, "cellclass", pynnNeuronClass.__name__)
                 if cell_tag_base:
                     g._preprocessor.BioModelInsertParameter(newParameterSet, "pop_label", cell_tag_base)
@@ -755,7 +753,8 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
 #            if not hasattr(cellparams['spike_times'],'__len__'): raise TypeError("ERROR: Value of 'spike_times' has to be iterable!")
             # assure that type of spike time list is a python list. If it was a numpy array, the str value will have no commas,
             # which causes problems during mapping analysis
-            cellparams['spike_times'] = list(cellparams['spike_times'].base_value.value)
+            cellparams['spike_times'].shape=(1,)
+            cellparams['spike_times'] = list(cellparams['spike_times'].evaluate(simplify=True).value)
         for i in xrange(n):
             cell_tag = cell_tag_base
             pynnSpikeSource = cellclass
