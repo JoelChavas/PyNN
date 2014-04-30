@@ -178,13 +178,16 @@ I_count = inh_cells.mean_spike_count()
 
 print "%d Writing data to file..." % node_id
 
+filename_exc = normalized_filename("Results", "VAbenchmarks_%s_exc" % options.benchmark, "pkl",
+                        options.simulator, np)
 exc_cells.write_data(
-    normalized_filename("Results", "VAbenchmarks_%s_exc" % options.benchmark, "pkl",
-                        options.simulator, np),
+    filename_exc,
     annotations={'script_name': __file__})
+
+filename_inh = normalized_filename("Results", "VAbenchmarks_%s_inh" % options.benchmark, "pkl",
+                        options.simulator, np)
 inh_cells.write_data(
-    normalized_filename("Results", "VAbenchmarks_%s_inh" % options.benchmark, "pkl",
-                        options.simulator, np),
+    filename_inh,
     annotations={'script_name': __file__})
 writeCPUTime = timer.diff()
 
@@ -207,6 +210,9 @@ if node_id == 0:
     print "Save connections time  : %g s" % saveCPUTime
     print "Simulation time        : %g s" % simCPUTime
     print "Writing time           : %g s" % writeCPUTime
+    print "\n--- files ---"
+    print filename_exc
+    print filename_inh
 
 
 # === Finished with simulator ==================================================
