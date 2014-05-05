@@ -45,14 +45,14 @@ ifcell  = IF_cond_exp(cm=0.2, i_offset=0.0, tau_refrac=3.0, v_thresh=-51.0, tau_
 popcell2 = Population(2,ifcell,label="popcell2")
 #popcell2 = Population(1,ifcell,initial_values={'v':-99})
 #popcell1 = Population(1, ifcell)
-spike_sourceE = Population(1, SpikeSourcePoisson(rate=100, duration=100), label="poissonE")
-spike_sourceI = Population(1, SpikeSourcePoisson(rate=100, start=120, duration=200), label="poissonI")
+spike_sourceE = Population(10, SpikeSourcePoisson(rate=100, duration=100), label="poissonE")
+spike_sourceI = Population(2, SpikeSourcePoisson(rate=100, start=120, duration=200), label="poissonI")
 #popcell2.initialize(v=-99)
 #popcell1.initialize(v=0)
 #conn = connect(popcell1, popcell2, weight=0.04, receptor_type='excitatory', delay=2.0)
 #conn = connect(popcell2, popcell1, weight=0.04, receptor_type='excitatory', delay=2.0)
 ext_syn = StaticSynapse(weight=0.006)
-rconn = 1.
+rconn = 0.6
 ext_conn = FixedProbabilityConnector(rconn)
 ext_inh_syn = StaticSynapse(weight=0.02)
 ext_inh_conn = FixedProbabilityConnector(rconn)

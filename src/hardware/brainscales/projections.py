@@ -38,9 +38,10 @@ class Connection(object):
 class Projection(common.Projection):
     __doc__ = common.Projection.__doc__
     _simulator = simulator
+    _static_synapse_class = StaticSynapse
 
     def __init__(self, presynaptic_population, postsynaptic_population,
-                 connector, synapse_type, source=None, receptor_type=None,
+                 connector, synapse_type=None, source=None, receptor_type=None,
                  space=Space(), label=None):
         common.Projection.__init__(self, presynaptic_population, postsynaptic_population,
                                    connector, synapse_type, source, receptor_type,
@@ -49,7 +50,7 @@ class Projection(common.Projection):
         ## Create connections
         self.connections = []
 
-	p = connector.p_connect
+	p = self._connector.p_connect
         if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
         if g._calledRunMapping: raise Exception("ERROR: Cannot connect cells after _run_mapping() has been called")
         if p > 1.: toLog(WARNING, "A connection probability larger than 1 has been passed as connect argument!")
@@ -71,9 +72,9 @@ class Projection(common.Projection):
                 #NoDelayWarning()
 	existing_parameter_set = None
     
-        if isinstance(synapse_type,StaticSynapse):
+        if isinstance(self.synapse_type,StaticSynapse):
             stp_parameters = None
-        elif isinstance(synapse,TsodyksMarkramMechanism):
+        elif isinstance(self.synapse_type,TsodyksMarkramMechanism):
             stp_parameters = TsodyksMarkramMechanism.parameters
         else:
             raise Exception("ERROR: The only short-term synaptic plasticity type supported by the BrainscaleS hardware is TsodyksMarkram!")
@@ -83,24 +84,24 @@ class Projection(common.Projection):
     
 	sharedParameters=True
 	priority = None
-	synapse_type.parameter_space.shape=(1,)
-	synapse_type.parameter_space.evaluate(simplify=True)
-	delay=synapse_type.parameter_space['delay']
-	weight=synapse_type.parameter_space['weight']
+	self.synapse_type.parameter_space.shape=(1,)
+	self.synapse_type.parameter_space.evaluate(simplify=True)
+	delay=self.synapse_type.parameter_space['delay']
+	weight=self.synapse_type.parameter_space['weight']
         try:
             if sharedParameters:
-                newParameterSet = existing_parameter_set or pyNN.hardware.brainscales._createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
-            for src in presynaptic_population:
+                newParameterSet = existing_parameter_set or pyNN.hardware.brainscales._createSynapseParameterSet(weight, delay, self.receptor_type, priority, stp_parameters)
+            for src in self.pre:
                 if p < 1.:
-                    if connector.rng: # use the supplied RNG
-                        rarr = connector.rng.uniform(0.,1.,len(postsynaptic_population))
+                    if self._connector.rng: # use the supplied RNG
+                        rarr = self._connector.rng.uniform(0.,1.,len(postsynaptic_population))
                     else:   # use the default RNG
                         rarr = g._globalRNG.uniform(0.,1.,len(postsynaptic_population))
-                for j,tgt in enumerate(postsynaptic_population):
+                for j,tgt in enumerate(self.post):
                     # evaluate if a connection has to be created
                     if p >= 1. or rarr[j] < p:
                         toLog(DEBUG1, 'Connecting ' + str(src) + ' with ' + str(tgt) + ' and weight ' + str(weight))
-                        if not sharedParameters: newParameterSet = pyNN.hardware.brainscales.__createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
+                        if not sharedParameters: newParameterSet = pyNN.hardware.brainscales.__createSynapseParameterSet(weight, delay, self.receptor_type, priority, stp_parameters)
                         g._preprocessor.BioModelInsertSynapse(src.graphModelNode, tgt.graphModelNode, newParameterSet)
     
         except Exception,e:
