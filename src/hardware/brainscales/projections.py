@@ -1,10 +1,21 @@
 from itertools import repeat, izip
-from pyNN import common
+from pyNN import common, errors
 from pyNN.core import ezip
 from pyNN.parameters import ParameterSpace
 from pyNN.space import Space
+import pyNN
 from . import simulator
-
+from .standardmodels.synapses import TsodyksMarkramMechanism, StaticSynapse
+import globals as g
+import mapping
+toLog = mapping.toLog
+ERROR   = mapping.ERROR
+WARNING = mapping.WARNING
+INFO    = mapping.INFO
+DEBUG0  = mapping.DEBUG0
+DEBUG1  = mapping.DEBUG1
+DEBUG2  = mapping.DEBUG2
+DEBUG3  = mapping.DEBUG3
 
 class Connection(object):
     """
@@ -37,6 +48,65 @@ class Projection(common.Projection):
 
         ## Create connections
         self.connections = []
+
+	p = connector.p_connect
+        if not g._calledSetup: raise Exception("ERROR: Call function 'setup(...)' first!")
+        if g._calledRunMapping: raise Exception("ERROR: Cannot connect cells after _run_mapping() has been called")
+        if p > 1.: toLog(WARNING, "A connection probability larger than 1 has been passed as connect argument!")
+    
+        # check if mapping priority (a value between 0 and 1) has been passed
+        #if "mapping_priority" in extra_params.keys():
+            #priority = extra_params["mapping_priority"]
+            #if priority > 1.0 or priority < 0.0: raise Exception("ERROR: Only values between 0.0 and 1.0 are allowed for argument mapping_priority of function connect!")
+        #else: priority = 1.0
+    
+        # check if a parameter_set has been passed
+        #if "parameter_set" in extra_params.keys():
+            #existing_parameter_set = extra_params["parameter_set"]
+        #else:
+            #existing_parameter_set = None
+            ## if there is not yet a parameter set, we have to check the delays:
+            #if delay and (delay is not common.build_state_queries(simulator)[2]):
+                #delay = common.build_state_queries(simulator)[2]();
+                #NoDelayWarning()
+	existing_parameter_set = None
+    
+        if isinstance(synapse_type,StaticSynapse):
+            stp_parameters = None
+        elif isinstance(synapse,TsodyksMarkramMechanism):
+            stp_parameters = TsodyksMarkramMechanism.parameters
+        else:
+            raise Exception("ERROR: The only short-term synaptic plasticity type supported by the BrainscaleS hardware is TsodyksMarkram!")
+    
+        g._synapsesChanged = True
+        g._connectivityChanged = True
+    
+	sharedParameters=True
+	priority = None
+	synapse_type.parameter_space.shape=(1,)
+	synapse_type.parameter_space.evaluate(simplify=True)
+	delay=synapse_type.parameter_space['delay']
+	weight=synapse_type.parameter_space['weight']
+        try:
+            if sharedParameters:
+                newParameterSet = existing_parameter_set or pyNN.hardware.brainscales._createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
+            for src in presynaptic_population:
+                if p < 1.:
+                    if connector.rng: # use the supplied RNG
+                        rarr = connector.rng.uniform(0.,1.,len(postsynaptic_population))
+                    else:   # use the default RNG
+                        rarr = g._globalRNG.uniform(0.,1.,len(postsynaptic_population))
+                for j,tgt in enumerate(postsynaptic_population):
+                    # evaluate if a connection has to be created
+                    if p >= 1. or rarr[j] < p:
+                        toLog(DEBUG1, 'Connecting ' + str(src) + ' with ' + str(tgt) + ' and weight ' + str(weight))
+                        if not sharedParameters: newParameterSet = pyNN.hardware.brainscales.__createSynapseParameterSet(weight, delay, receptor_type, priority, stp_parameters)
+                        g._preprocessor.BioModelInsertSynapse(src.graphModelNode, tgt.graphModelNode, newParameterSet)
+    
+        except Exception,e:
+            raise errors.ConnectionError(e)
+
+
         connector.connect(self)
 
     def __len__(self):

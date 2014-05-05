@@ -517,7 +517,7 @@ def assertStimulationSpikeTrain(inputID, regenerate=True):
                 inputID.has_spikes = True
     elif pynnObject.__class__.__name__ == 'SpikeSourceArray':
         if regenerate or (not inputID.has_spikes):
-            st = pynnHardwareSpikeArray(pynnObject.parameter_space['spike_times'])
+            st = pynnHardwareSpikeArray(pynnObject.parameter_space['spike_times'].value)
             #_preprocessor.InsertVectorDoubleToGMNodeData(gmNode, st)
             g._preprocessor.BioModelAttachSpikeTrainToStimulus(gmNode, st)
             inputID.has_spikes = True
@@ -753,8 +753,7 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
 #            if not hasattr(cellparams['spike_times'],'__len__'): raise TypeError("ERROR: Value of 'spike_times' has to be iterable!")
             # assure that type of spike time list is a python list. If it was a numpy array, the str value will have no commas,
             # which causes problems during mapping analysis
-            cellparams['spike_times'].shape=(1,)
-            cellparams['spike_times'] = list(cellparams['spike_times'].evaluate(simplify=True).value)
+            cellparams['spike_times'] = list(cellparams['spike_times'].value)
         for i in xrange(n):
             cell_tag = cell_tag_base
             pynnSpikeSource = cellclass
@@ -779,7 +778,7 @@ def _create(cellclass, cellparams=None, n=1, sharedParameters=True, **extra_para
         else: return returnList
 
     else:
-        exceptionString = "ERROR: Has to be cell type " + EIF_cond_exp_isfa_ista.__name__ + " or " + SpikeSourcePoisson.__name__ + " or " + SpikeSourceArray.__name__ # Why does it have to be EIF_cond_alpha_isfa_ista?
+        exceptionString = "ERROR: Has to be cell type " + EIF_cond_exp.__name__ + " or " + SpikeSourcePoisson.__name__ + " or " + SpikeSourceArray.__name__ 
         raise Exception(exceptionString)
  
 

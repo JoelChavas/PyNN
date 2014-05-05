@@ -198,7 +198,9 @@ class SpikeSourceArray(cells.SpikeSourceArray, HardwareRangeChecker):
         self.index = None
         self.hardwareSpikeTimes = None
         super(SpikeSourceArray, self).__init__(**parameters)
-        self.checkParameterRanges(self.parameter_space._parameters)
+	self.parameter_space.shape = (1,)
+        self.parameter_space.evaluate(simplify=True)
+        self.checkParameterRanges(self.parameter_space.as_dict())
         
     def checkParameterRanges(self, parameters):
         """!

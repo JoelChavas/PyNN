@@ -156,7 +156,6 @@ print "%s Setting up recording..." % node_id
 exc_cells.record('spikes')
 inh_cells.record('spikes')
 exc_cells[0, 1].record('v')
-exc_cells[0, 1].record('gsyn_exc')
 
 buildCPUTime = timer.diff()
 

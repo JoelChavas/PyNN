@@ -37,6 +37,7 @@ if len(blocks) > 0:
         for simulator, block in blocks[name].items():
 	    vm = block.segments[0].filter(name="v")[0]
 	    plt.plot(vm.times, vm[:, 0], label=simulator_name)
+	    print vm
         plt.legend()
         plt.title(name)
         plt.xlabel("Time (ms)")
