@@ -51,6 +51,11 @@ class StaticSynapse(synapses.StaticSynapse):
         ('weight', 'WEIGHT'),
         ('delay', 'DELAY'),
     )
+    
+    def __init__(self,**parameters):
+        super(StaticSynapse, self).__init__(**parameters)
+	self.parameter_space.shape=(1,)
+	self.parameter_space.evaluate(simplify=True)
 
     def _get_minimum_delay(self):
         return state.min_delay

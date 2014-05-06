@@ -39,7 +39,7 @@ parallel_safe = True
 
 n        = 4000  # number of cells
 r_ei     = 4.0   # number of excitatory cells:number of inhibitory cells
-pconn    = 0.02  # connection probability
+pconn    = 0.0001  # connection probability
 stim_dur = 50.   # (ms) duration of random stimulation
 rate     = 100.  # (Hz) frequency of the random stimulation
 
@@ -95,7 +95,7 @@ elif options.benchmark == "CUBA":
 
 # === Build the network ========================================================
 
-extra = {'loglevel':2, 'useSystemSim':True, 'hardware':sim.hardwareSetup['small'], 
+extra = {'loglevel':2, 'useSystemSim':True, 'hardware':sim.hardwareSetup['medium'], 
 	 'threads' : threads,
          'filename': "va_%s.xml" % options.benchmark,
          'label': 'VA'}
@@ -126,7 +126,7 @@ exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cel
 inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
 if options.benchmark == "COBA":
     ext_stim = sim.Population(20, sim.SpikeSourcePoisson(rate=rate, duration=stim_dur), label="expoisson")
-    rconn = 0.01
+    rconn = 0.001
     ext_conn = sim.FixedProbabilityConnector(rconn)
     ext_syn = sim.StaticSynapse(weight=0.1)
 
@@ -148,8 +148,8 @@ connections['e2i'] = sim.Projection(exc_cells, inh_cells, connector, exc_syn, re
 connections['i2e'] = sim.Projection(inh_cells, exc_cells, connector, inh_syn, receptor_type='inhibitory')
 connections['i2i'] = sim.Projection(inh_cells, inh_cells, connector, inh_syn, receptor_type='inhibitory')
 if (options.benchmark == "COBA"):
-    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, ext_conn, ext_syn, receptor_type='excitatory')
-    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, ext_conn, ext_syn, receptor_type='excitatory')
+    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, connector=ext_conn, synapse_type=ext_syn, receptor_type='excitatory')
+    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, connector=ext_conn, synapse_type=ext_syn, receptor_type='excitatory')
 
 # === Setup recording ==========================================================
 print "%s Setting up recording..." % node_id

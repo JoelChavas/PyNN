@@ -84,8 +84,6 @@ class Projection(common.Projection):
     
 	sharedParameters=True
 	priority = None
-	self.synapse_type.parameter_space.shape=(1,)
-	self.synapse_type.parameter_space.evaluate(simplify=True)
 	delay=self.synapse_type.parameter_space['delay']
 	weight=self.synapse_type.parameter_space['weight']
         try:
