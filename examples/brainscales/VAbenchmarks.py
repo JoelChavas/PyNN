@@ -39,7 +39,7 @@ parallel_safe = True
 
 n        = 4000  # number of cells
 r_ei     = 4.0   # number of excitatory cells:number of inhibitory cells
-pconn    = 0.0001  # connection probability
+pconn    = 0.02  # connection probability
 stim_dur = 50.   # (ms) duration of random stimulation
 rate     = 100.  # (Hz) frequency of the random stimulation
 
@@ -96,6 +96,8 @@ elif options.benchmark == "CUBA":
 # === Build the network ========================================================
 
 extra = {'loglevel':2, 'useSystemSim':True, 'hardware':sim.hardwareSetup['medium'], 
+	 'maxNeuronLoss':0., 'maxSynapseLoss':0.4,
+	 'hardwareNeuronSize':8,
 	 'threads' : threads,
          'filename': "va_%s.xml" % options.benchmark,
          'label': 'VA'}
@@ -126,7 +128,7 @@ exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cel
 inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
 if options.benchmark == "COBA":
     ext_stim = sim.Population(20, sim.SpikeSourcePoisson(rate=rate, duration=stim_dur), label="expoisson")
-    rconn = 0.001
+    rconn = 0.01
     ext_conn = sim.FixedProbabilityConnector(rconn)
     ext_syn = sim.StaticSynapse(weight=0.1)
 
