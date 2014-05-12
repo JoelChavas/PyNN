@@ -39,6 +39,7 @@ if len(blocks) > 0:
 	    plt.plot(vm.times, vm[:, 0], label=simulator_name)
 	    print vm
         plt.legend()
+        plt.ylim(-65,-45)
         plt.title(name)
         plt.xlabel("Time (ms)")
         plt.ylabel("Votage (mV)")

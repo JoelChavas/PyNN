@@ -21,7 +21,7 @@ from pyNN.hardware.brainscales import *
 simulator_name = "HardwareBrainscales"
 
 #setup(timestep=0.1,min_delay=0.1,max_delay=4.0)
-setup(loglevel=2, useSystemSim=True, hardware=hardwareSetup['one-hicann'],timestep=0.1,min_delay=0.1,max_delay=4.0)
+setup(loglevel=2, useSystemSim=True, hardware=hardwareSetup['one-hicann'],maxSynapseLoss=0.6,hardwareNeuronSize=4,timestep=0.1,min_delay=0.1,max_delay=4.0)
 # ## enable the interactive Mapping mode
 # g._interactiveMappingMode = True
 # ## enable the interactive Mapping mode's GUI
@@ -41,18 +41,23 @@ setup(loglevel=2, useSystemSim=True, hardware=hardwareSetup['one-hicann'],timest
 # 
 # run(200.0)
 
-ifcell  = IF_cond_exp(cm=0.2, i_offset=0.0, tau_refrac=3.0, v_thresh=-51.0, tau_syn_E=5.0, tau_syn_I=5.0, v_reset=-70.0, e_rev_E=0., e_rev_I=-100., v_rest=-50., tau_m=20.)
+ifcell  = IF_cond_exp(cm=0.2, i_offset=0.0, tau_refrac=3.0, v_thresh=-49.0, tau_syn_E=5.0, tau_syn_I=5.0, v_reset=-70.0, e_rev_E=0., e_rev_I=-100., v_rest=-50., tau_m=20.)
 popcell2 = Population(1,ifcell)
 #popcell2 = Population(1,ifcell,initial_values={'v':-99})
 #popcell1 = Population(1, ifcell)
-spike_sourceE = create(SpikeSourceArray, {'spike_times': [float(i) for i in range(5,105,10)]})
-spike_sourceI = create(SpikeSourceArray, {'spike_times': [float(i) for i in range(155,255,10)]})
+sourceE = SpikeSourceArray(spike_times = [float(i) for i in range(5,105,10)])
+sourceI = SpikeSourceArray(spike_times = [float(i) for i in range(155,255,10)])
+spike_sourceE = Population(1, sourceE)
+spike_sourceI = Population(1, sourceI)
 #popcell2.initialize(v=-99)
 #popcell1.initialize(v=0)
 #conn = connect(popcell1, popcell2, weight=0.04, receptor_type='excitatory', delay=2.0)
 #conn = connect(popcell2, popcell1, weight=0.04, receptor_type='excitatory', delay=2.0)
-connE = connect(spike_sourceE, popcell2, weight=0.006, receptor_type='excitatory', delay=2.0)
-connI = connect(spike_sourceI, popcell2, weight=0.02, receptor_type='inhibitory', delay=4.0)
+syn = StaticSynapse(weight=0.006, delay=2.0)
+connector = FixedProbabilityConnector(1., rng=None)
+connE = Projection(spike_sourceE, popcell2, connector, syn, receptor_type='excitatory')
+#connE = connect(spike_sourceE, popcell2, weight=0.006, receptor_type='excitatory', delay=2.0)
+#connI = connect(spike_sourceI, popcell2, weight=0.02, receptor_type='inhibitory', delay=4.0)
 filename = normalized_filename("Results", "IF_cond_exp", "pkl", simulator_name)
 record(['v', 'spikes'], popcell2, filename,
        annotations={'script_name': __file__})

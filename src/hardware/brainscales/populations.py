@@ -60,6 +60,10 @@ class Population(common.Population):
     def _create_cells(self):
         # this method should never be called more than once
         # perhaps should check for that
+        if self.celltype.parameter_space.as_dict().has_key('spike_times'):
+	  if type(self.celltype.parameter_space.as_dict()['spike_times']) == numpy.ndarray:
+	    self.celltype.parameter_space.update(spike_times=self.celltype.parameter_space.as_dict()['spike_times'][0])
+	    self.celltype.parameter_space.evaluate(simplify=True)
         buf = pyNN.hardware.brainscales._create(self.celltype, self.celltype.parameter_space.as_dict(), self.size, cell_tag=self.label)
         if type(buf) != type([]): buf = [buf]
         self.all_cells = buf
