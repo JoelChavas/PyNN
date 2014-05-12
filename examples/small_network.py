@@ -1,4 +1,4 @@
-# encoding: utf-8
+2# encoding: utf-8
 """
 Small network created with the Population and Projection classes
 

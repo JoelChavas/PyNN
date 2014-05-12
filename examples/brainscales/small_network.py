@@ -21,7 +21,7 @@ if options.debug:
 # === Define parameters ========================================================
 
 n = 20      # Number of cells
-w = 0.005  # synaptic weight (µS)
+w = 0.002  # synaptic weight (µS)
 cell_params = {
     'tau_m'      : 20.0,   # (ms)
     'tau_syn_E'  : 2.0,    # (ms)
@@ -36,15 +36,15 @@ cell_params = {
 dt         = 0.1           # (ms)
 syn_delay  = 1.0           # (ms)
 input_rate = 50.0          # (Hz)
-simtime    = 200.0        # (ms)
+simtime    = 150.0        # (ms)
 
 # === Build the network ========================================================
 
 extra={}
 if sim.__name__ == "pyNN.hardware.brainscales":
-  extra = {'loglevel':2, 'useSystemSim':True, 'hardware': sim.hardwareSetup['one-hicann'],
+  extra = {'loglevel':2, 'useSystemSim':True, 'hardware': sim.hardwareSetup['medium'],
 	'maxNeuronLoss':0., 'maxSynapseLoss':0.4,
-	'hardwareNeuronSize':8}
+	'hardwareNeuronSize':1}
 sim.setup(timestep=dt, max_delay=syn_delay, **extra)
 
 cells = sim.Population(n, sim.IF_cond_exp(**cell_params),
@@ -61,14 +61,16 @@ def generate_spike_times(i):
         return gen()
 assert generate_spike_times(0).max() > simtime
 
-spike_source = sim.Population(n, sim.SpikeSourceArray(spike_times=[float(i) for i in range(5,105,10)]))
+spike_times=[float(i) for i in range(5,105,10)]
+
+spike_source = sim.Population(n, sim.SpikeSourceArray(spike_times=spike_times))
 
 #spike_source.record('spikes')
 cells.record('spikes')
 cells[0:2].record(('v'))
 
-syn = sim.StaticSynapse(weight=w*4,delay=syn_delay)
-input_conns = sim.Projection(spike_source, cells, sim.FixedProbabilityConnector(0.5), syn)
+syn = sim.StaticSynapse(weight=w,delay=syn_delay)
+input_conns = sim.Projection(spike_source, cells, sim.FixedProbabilityConnector(1.), syn)
 
 # === Run simulation ===========================================================
 
@@ -92,3 +94,5 @@ if options.plot_figure:
 # === Clean up and quit ========================================================
 
 sim.end()
+print "spike_times = ", spike_times
+print "number presynaptic spikes = ", len(spike_times)
