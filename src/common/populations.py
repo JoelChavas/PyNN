@@ -385,6 +385,9 @@ class BasePopulation(object):
             self._set_initial_value_array(variable, initial_value)
             self.initial_values[variable] = initial_value
 
+    def find_units(self, variable):
+        return self.celltype.units[variable]
+
     def can_record(self, variable):
         """Determine whether `variable` can be recorded from this population."""
         return self.celltype.can_record(variable)
@@ -630,7 +633,7 @@ class Population(BasePopulation):
         self.initial_values = {}
         self.initial_values.update(initial_values)
         all_initial_values = self.celltype.default_initial_values.copy()
-        all_initial_values.update(self.initial_values)
+        all_initial_values.update(initial_values)
         self.initialize(**all_initial_values)
         Population._nPop += 1
 
@@ -982,6 +985,12 @@ class Assembly(object):
             for p in self.populations[1:]:
                 rts = rts.intersection(set(p.celltype.receptor_types))
         return rts
+
+    def find_units(self, variable):
+        units = set(p.find_units(variable) for p in self.populations)
+        if len(units) > 1:
+            raise ValueError("Inconsistent units")
+        return units
 
     @property
     def _mask_local(self):
