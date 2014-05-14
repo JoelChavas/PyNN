@@ -22,7 +22,7 @@ if options.debug:
 # === Define parameters ========================================================
 
 n = 20      # Number of cells
-w = 0.002  # synaptic weight (µS)
+w = 0.002  # synaptic weight (microS)
 cell_params = {
     'tau_m'      : 20.0,   # (ms)
     'tau_syn_E'  : 2.0,    # (ms)
