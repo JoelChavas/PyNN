@@ -47,7 +47,7 @@ class Projection(common.Projection):
         self._connections = None
 
         # Create connections
-        connector.connect(self)
+        self._connector.connect(self)
 
     def __getitem__(self, i):
         """Return the `i`th connection on the local MPI node."""

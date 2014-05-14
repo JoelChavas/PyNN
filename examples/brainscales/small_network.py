@@ -90,9 +90,11 @@ if options.plot_figure:
         Panel(vm, ylabel="Membrane potential (mV)"),
         Panel(data.spiketrains, xlabel="Time (ms)", xticks=True),
     ).save(options.plot_figure)
+    
+
+print "spike_times = ", spike_times
+print "number presynaptic spikes = ", len(spike_times)    
 
 # === Clean up and quit ========================================================
 
 sim.end()
-print "spike_times = ", spike_times
-print "number presynaptic spikes = ", len(spike_times)

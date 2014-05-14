@@ -28,6 +28,7 @@ sim, options = get_simulator(("benchmark", "Either CUBA or COBA"),
 			     ("--plot-figure", "Plot the simulation results to a file."))
 
 from pyNN.random import NumpyRNG, RandomDistribution
+from numpy import nan_to_num
 
 init_logging(None, debug=True)
 timer = Timer()
@@ -131,18 +132,13 @@ print "%s Creating cell populations..." % node_id
 exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cells")
 inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
 
-rng = []
-conn = []
-ext_conn = []
-for i in range(10):
-  rng.append(NumpyRNG(seed=i, parallel_safe=parallel_safe))
+rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
 
 if options.benchmark == "COBA":
     spike_times = [float(i) for i in range(50,int(50+stim_dur),int(1000./rate))]
     ext_stim = sim.Population(20, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
     rconn = 0.01
-    ext_conn.append(sim.FixedProbabilityConnector(rconn, rng=rng[0]))
-    ext_conn.append(sim.FixedProbabilityConnector(rconn, rng=rng[1]))
+    ext_conn = sim.FixedProbabilityConnector(rconn, rng=rng)
     ext_syn = sim.StaticSynapse(weight=0.1)
 
 print "%s Initialising membrane potential to random values..." % node_id
@@ -152,19 +148,21 @@ inh_cells.initialize(v=E_leak)
 
 print "%s Connecting populations..." % node_id
 progress_bar = ProgressBar(width=20)
-for i in range(4):
-  conn.append(sim.FixedProbabilityConnector(pconn, rng=rng[2+i], callback=progress_bar))
+conn = sim.FixedProbabilityConnector(pconn, rng=rng, callback=progress_bar)
 exc_syn = sim.StaticSynapse(weight=w_exc, delay=delay)
 inh_syn = sim.StaticSynapse(weight=w_inh, delay=delay)
 
 connections={}
-connections['e2e'] = sim.Projection(exc_cells, exc_cells, conn[0], exc_syn, receptor_type='excitatory')
-connections['e2i'] = sim.Projection(exc_cells, inh_cells, conn[1], exc_syn, receptor_type='excitatory')
-connections['i2e'] = sim.Projection(inh_cells, exc_cells, conn[2], inh_syn, receptor_type='inhibitory')
-connections['i2i'] = sim.Projection(inh_cells, inh_cells, conn[3], inh_syn, receptor_type='inhibitory')
+connections['e2e'] = sim.Projection(exc_cells, exc_cells, conn, exc_syn, receptor_type='excitatory')
+connections['e2i'] = sim.Projection(exc_cells, inh_cells, conn, exc_syn, receptor_type='excitatory')
+connections['i2e'] = sim.Projection(inh_cells, exc_cells, conn, inh_syn, receptor_type='inhibitory')
+connections['i2i'] = sim.Projection(inh_cells, inh_cells, conn, inh_syn, receptor_type='inhibitory')
 if (options.benchmark == "COBA"):
-    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, connector=ext_conn[0], synapse_type=ext_syn, receptor_type='excitatory')
-    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, connector=ext_conn[1], synapse_type=ext_syn, receptor_type='excitatory')
+    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, connector=ext_conn, synapse_type=ext_syn, receptor_type='excitatory')
+    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, connector=ext_conn, synapse_type=ext_syn, receptor_type='excitatory')
+
+print nan_to_num(connections['ext2e'].get('delay', format="array"))[0:10,0:10]
+print nan_to_num(connections['ext2i'].get('delay', format="array"))[0:10,0:10]
 
 # === Setup recording ==========================================================
 print "%s Setting up recording..." % node_id
@@ -239,12 +237,25 @@ if options.plot_figure:
     vm_exc = data_exc.filter(name="v")[0]
     data_inh = inh_cells.get_data().segments[0]
     vm_inh = data_inh.filter(name="v")[0]
+    matrix_weights_exc = nan_to_num(connections['ext2e'].get('weight', format="array"))[0:20,0:60]
+    matrix_weights_inh = nan_to_num(connections['ext2i'].get('weight', format="array"))[0:20,0:60]
+    conn_weights_exc = nan_to_num(connections['e2e'].get('weight', format="array"))[0:20,0:60]
+    conn_weights_inh = nan_to_num(connections['e2i'].get('weight', format="array"))[0:20,0:60]
+    inh_weights_exc = nan_to_num(connections['i2e'].get('weight', format="array"))[0:20,0:60]
+    inh_weights_inh = nan_to_num(connections['i2i'].get('weight', format="array"))[0:20,0:60]
+ 
     Figure(
-        Panel(vm_exc, ylabel="Membrane potential (mV)", data_labels=["excitatory", "excitatory"]),
-        Panel(data_exc.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
-        Panel(vm_inh, ylabel="Membrane potential (mV)", data_labels=["inhibitory", "inhibitory"]),
-        Panel(data_inh.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
-    ).save(options.plot_figure)
+        #Panel(vm_exc, ylabel="Membrane potential (mV)", data_labels=["excitatory", "excitatory"], line_properties=[{'ylim':[-70, -40]}, {'ylim':[-70, -40]}]),
+        #Panel(data_exc.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
+        #Panel(vm_inh, ylabel="Membrane potential (mV)", data_labels=["inhibitory", "inhibitory"], line_properties=[{'ylim':[-70, -40]}, {'ylim':[-70, -40]}]),
+        #Panel(data_inh.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
+        Panel(matrix_weights_exc,data_labels=["ext->exc"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+        Panel(matrix_weights_inh,data_labels=["ext->inh"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+        Panel(conn_weights_exc,data_labels=["exc->exc"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+        Panel(conn_weights_inh,data_labels=["exc->inh"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+        Panel(inh_weights_exc,data_labels=["inh->exc"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+        Panel(inh_weights_inh,data_labels=["inh->inh"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+     ).save(options.plot_figure)
 
 # === Finished with simulator ==================================================
 

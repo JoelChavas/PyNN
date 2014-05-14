@@ -122,7 +122,7 @@ def get_simulator(*arguments):
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("simulator",
-                        help="neuron, nest, brian, pcsim or another backend simulator")
+                        help="neuron, nest, brian or another backend simulator")
     for argument in arguments:
         arg_name, help_text = argument
         parser.add_argument(arg_name, help=help_text)
