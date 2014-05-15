@@ -17,6 +17,7 @@ Usage: python VAbenchmarks.py <simulator> <benchmark>
 Andrew Davison, UNIC, CNRS
 August 2006
 
+for rconn in 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9; do python test_ext_inh.py nest COBA --rconn=$rconn 2> /dev/null | tail -1; done
 """
 
 import os
@@ -25,7 +26,8 @@ from math import *
 
 from pyNN.utility import get_simulator, Timer, ProgressBar, init_logging, normalized_filename
 sim, options = get_simulator(("benchmark", "Either CUBA or COBA"),
-			     ("--plot-figure", "Plot the simulation results to a file."))
+			     ("--plot-figure", "Plot the simulation results to a file."),
+			     ("--rconn", "Proba of connection ext->inh."))
 
 from pyNN.random import NumpyRNG, RandomDistribution
 from numpy import nan_to_num
@@ -97,7 +99,7 @@ elif options.benchmark == "CUBA":
 
 # === Build the network ========================================================
 
-extra = {'loglevel':2, 'useSystemSim':True,
+extra = {'loglevel':0, 'useSystemSim':True,
 	'maxNeuronLoss':0., 'maxSynapseLoss':0.4,
 	'hardwareNeuronSize':8,
 	'threads' : threads,
@@ -132,15 +134,14 @@ print "%s Creating cell populations..." % node_id
 exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cells")
 inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
 
-#rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
-rng = NumpyRNG(seed=None, parallel_safe=parallel_safe)
+rng = NumpyRNG(seed=rngseed*2, parallel_safe=parallel_safe)
 
 if options.benchmark == "COBA":
     spike_times = [float(i) for i in range(50,int(50+stim_dur),int(1000./rate))]
     ext_stim = sim.Population(1, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
-    rconn = 0.9
+    rconn = options.rconn
     ext_conn = sim.FixedProbabilityConnector(rconn, rng=rng)
-    ext_syn = sim.StaticSynapse(weight=0.002, delay=delay)
+    ext_syn = sim.StaticSynapse(weight=0.001, delay=delay)
 
 full_conn = sim.FixedProbabilityConnector(0.9, rng=rng)
 null_conn = sim.FixedProbabilityConnector(0., rng=rng)
@@ -185,54 +186,54 @@ saveCPUTime = timer.diff()
 # === Run simulation ===========================================================
 print "%d Running simulation..." % node_id
 
-sim.run(tstop)
+#sim.run(tstop)
 
-simCPUTime = timer.diff()
+#simCPUTime = timer.diff()
 
-E_count = exc_cells.mean_spike_count()
-I_count = inh_cells.mean_spike_count()
+#E_count = exc_cells.mean_spike_count()
+#I_count = inh_cells.mean_spike_count()
 
-# === Print results to file ====================================================
+## === Print results to file ====================================================
 
-print "%d Writing data to file..." % node_id
+#print "%d Writing data to file..." % node_id
 
-filename_exc = normalized_filename("Results", "VAbenchmarks_%s_exc" % options.benchmark, "pkl",
-                        options.simulator, np)
-exc_cells.write_data(
-    filename_exc,
-    annotations={'script_name': __file__})
+#filename_exc = normalized_filename("Results", "VAbenchmarks_%s_exc" % options.benchmark, "pkl",
+                        #options.simulator, np)
+#exc_cells.write_data(
+    #filename_exc,
+    #annotations={'script_name': __file__})
 
-filename_inh = normalized_filename("Results", "VAbenchmarks_%s_inh" % options.benchmark, "pkl",
-                        options.simulator, np)
-inh_cells.write_data(
-    filename_inh,
-    annotations={'script_name': __file__})
-writeCPUTime = timer.diff()
+#filename_inh = normalized_filename("Results", "VAbenchmarks_%s_inh" % options.benchmark, "pkl",
+                        #options.simulator, np)
+#inh_cells.write_data(
+    #filename_inh,
+    #annotations={'script_name': __file__})
+#writeCPUTime = timer.diff()
 
 str_connections = "%d e→e  %d e→i  %d i→e  %d i→i" % (connections['e2e'].size(),
                                                   connections['e2i'].size(),
                                                   connections['i2e'].size(),
                                                   connections['i2i'].size())
-str_stim_connections = "%d stim->e  %d stim->i" % (connections['ext2e'].size(),connections['ext2i'].size())
+#str_stim_connections = "%d stim->e  %d stim->i" % (connections['ext2e'].size(),connections['ext2i'].size())
 
 if node_id == 0:
-    print "\n--- Vogels-Abbott Network Simulation ---"
-    print "Nodes                  : %d" % np
-    print "Simulation type        : %s" % options.benchmark
-    print "Number of Neurons      : %d" % n
-    print "Number of Synapses     : %s" % str_connections
-    print "Number of inputs       : %s" % str_stim_connections
-    print "Excitatory conductance : %g nS" % Gexc
-    print "Inhibitory conductance : %g nS" % Ginh
-    print "Excitatory rate        : %g Hz" % (E_count*1000.0/tstop,)
-    print "Inhibitory rate        : %g Hz" % (I_count*1000.0/tstop,)
-    print "Build time             : %g s" % buildCPUTime
-    print "Save connections time  : %g s" % saveCPUTime
-    print "Simulation time        : %g s" % simCPUTime
-    print "Writing time           : %g s" % writeCPUTime
-    print "\n--- files ---"
-    print filename_exc
-    print filename_inh
+    #print "\n--- Vogels-Abbott Network Simulation ---"
+    #print "Nodes                  : %d" % np
+    #print "Simulation type        : %s" % options.benchmark
+    #print "Number of Neurons      : %d" % n
+    #print "Number of Synapses     : %s" % str_connections
+    print connections['ext2i'].size()
+    #print "Excitatory conductance : %g nS" % Gexc
+    #print "Inhibitory conductance : %g nS" % Ginh
+    #print "Excitatory rate        : %g Hz" % (E_count*1000.0/tstop,)
+    #print "Inhibitory rate        : %g Hz" % (I_count*1000.0/tstop,)
+    #print "Build time             : %g s" % buildCPUTime
+    #print "Save connections time  : %g s" % saveCPUTime
+    #print "Simulation time        : %g s" % simCPUTime
+    #print "Writing time           : %g s" % writeCPUTime
+    #print "\n--- files ---"
+    #print filename_exc
+    #print filename_inh
 
 if options.plot_figure:
     from pyNN.utility.plotting import Figure, Panel

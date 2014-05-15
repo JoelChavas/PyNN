@@ -132,15 +132,14 @@ print "%s Creating cell populations..." % node_id
 exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cells")
 inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
 
-#rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
-rng = NumpyRNG(seed=None, parallel_safe=parallel_safe)
+rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
 
 if options.benchmark == "COBA":
     spike_times = [float(i) for i in range(50,int(50+stim_dur),int(1000./rate))]
-    ext_stim = sim.Population(1, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
-    rconn = 0.9
+    ext_stim = sim.Population(20, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
+    rconn = 0.1
     ext_conn = sim.FixedProbabilityConnector(rconn, rng=rng)
-    ext_syn = sim.StaticSynapse(weight=0.002, delay=delay)
+    ext_syn = sim.StaticSynapse(weight=0.2)
 
 full_conn = sim.FixedProbabilityConnector(0.9, rng=rng)
 null_conn = sim.FixedProbabilityConnector(0., rng=rng)
@@ -264,7 +263,7 @@ if options.plot_figure:
 	Panel(data_stim.spiketrains, xlabel="Time (ms)", xticks=True),
 	Panel(vm_exc, ylabel="Membrane potential (mV)", data_labels=["excitatory", "excitatory"], line_properties=[{'yticks':True}]),
         Panel(data_exc.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
-        Panel(vm_inh, ylabel="Membrane potential (mV)", data_labels=["inhibitory", "inhibitory"], line_properties=[{'yticks':True}]),
+        Panel(vm_inh, ylabel="Membrane potential (mV)", data_labels=["inhibitory", "inhibitory"], line_properties=[{'yticks':True, 'ylim':[-60,-50]}]),
         Panel(data_inh.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
     ).save(filename_act)
 
