@@ -65,7 +65,7 @@ spike_times=[float(i) for i in range(5,105,10)]
 
 spike_source = sim.Population(n, sim.SpikeSourceArray(spike_times=spike_times))
 
-#spike_source.record('spikes')
+spike_source.record('spikes')
 cells.record('spikes')
 cells[0:2].record(('v'))
 
@@ -84,9 +84,11 @@ print "Mean firing rate: ", cells.mean_spike_count()*1000.0/simtime, "Hz"
 
 if options.plot_figure:
     from pyNN.utility.plotting import Figure, Panel
+    stimdata = spike_source.get_data().segments[0]
     data = cells.get_data().segments[0]
     vm = data.filter(name="v")[0]
     Figure(
+	Panel(stimdata.spiketrains, xlabel="Time (ms)", xticks=True),
         Panel(vm, ylabel="Membrane potential (mV)"),
         Panel(data.spiketrains, xlabel="Time (ms)", xticks=True),
     ).save(options.plot_figure)
