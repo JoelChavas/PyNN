@@ -45,17 +45,23 @@ class STDPMechanism(synapses.STDPMechanism):
         self.voltage_dependence = None
         self.dendritic_delay_fraction = 0.0
 
-class StaticSynapse(synapses.StaticSynapse):
+class StaticSynapse(synapses.StaticSynapse, HardwareRangeChecker):
     __doc__ = synapses.StaticSynapse.__doc__
     translations = build_translations(
         ('weight', 'WEIGHT'),
         ('delay', 'DELAY'),
     )
     
+    parameter_ranges = {
+	'weight'     :(   0.,   0.3), # uS
+	'delay'      :(   0.,   10.), # ms
+	}
+    
     def __init__(self,**parameters):
         super(StaticSynapse, self).__init__(**parameters)
 	self.parameter_space.shape=(1,)
 	self.parameter_space.evaluate(simplify=True)
+        self.checkParameterRanges(self.parameter_space.as_dict())
 
     def _get_minimum_delay(self):
         return state.min_delay
