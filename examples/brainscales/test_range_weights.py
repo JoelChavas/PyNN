@@ -25,7 +25,8 @@ from math import *
 
 from pyNN.utility import get_simulator, Timer, ProgressBar, init_logging, normalized_filename
 sim, options = get_simulator(("benchmark", "Either CUBA or COBA"),
-			     ("--plot-figure", "Plot the simulation results to a file."))
+			     ("--plot-figure", "Plot the simulation results to a file."),
+			     ("--weight", "Assigns the weight ext->neuron."))
 
 from pyNN.random import NumpyRNG, RandomDistribution
 from numpy import nan_to_num
@@ -41,7 +42,7 @@ parallel_safe = True
 
 n        = 100   # number of cells
 r_ei     = 4.0   # number of excitatory cells:number of inhibitory cells
-pconn    = 0.2  # connection probability
+pconn    = 0.99  # connection probability
 stim_dur = 60.   # (ms) duration of random stimulation
 rate     = 5.  # (Hz) frequency of the random stimulation
 
@@ -97,14 +98,14 @@ elif options.benchmark == "CUBA":
 
 # === Build the network ========================================================
 
-extra = {'loglevel':2, 'useSystemSim':True,
-	'maxNeuronLoss':0., 'maxSynapseLoss':0.4,
+extra = {'loglevel':0, 'useSystemSim':True,
+	'maxNeuronLoss':0., 'maxSynapseLoss':0.,
 	'hardwareNeuronSize':8,
 	'threads' : threads,
 	'filename': "va_%s.xml" % options.benchmark,
 	'label': 'VA'}
 if sim.__name__ == "pyNN.hardware.brainscales":
-  extra['hardware'] = sim.hardwareSetup['small']
+  extra['hardware'] = sim.hardwareSetup['one-hicann']
   
 if options.simulator == "neuroml":
     extra["file"] = "VAbenchmarks.xml"
@@ -129,8 +130,8 @@ if (options.benchmark == "COBA"):
 timer.start()
 
 print "%s Creating cell populations..." % node_id
-exc_cells = sim.Population(n_exc, celltype(**cell_params), label="Excitatory_Cells")
-inh_cells = sim.Population(n_inh, celltype(**cell_params), label="Inhibitory_Cells")
+exc_cells = sim.Population(1, celltype(**cell_params), label="Excitatory_Cells")
+inh_cells = sim.Population(1, celltype(**cell_params), label="Inhibitory_Cells")
 
 #rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
 rng = NumpyRNG(seed=None, parallel_safe=parallel_safe)
@@ -138,11 +139,11 @@ rng = NumpyRNG(seed=None, parallel_safe=parallel_safe)
 if options.benchmark == "COBA":
     spike_times = [float(i) for i in range(50,int(50+stim_dur),int(1000./rate))]
     ext_stim = sim.Population(1, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
-    rconn = 0.9
+    rconn = 0.99
     ext_conn = sim.FixedProbabilityConnector(rconn, rng=rng)
-    ext_syn = sim.StaticSynapse(weight=0.4, delay=delay)
+    ext_syn = sim.StaticSynapse(weight=float(options.weight), delay=delay)
 
-full_conn = sim.FixedProbabilityConnector(0.9, rng=rng)
+full_conn = sim.FixedProbabilityConnector(0.99, rng=rng)
 null_conn = sim.FixedProbabilityConnector(0., rng=rng)
 
 print "%s Initialising membrane potential to random values..." % node_id
@@ -154,16 +155,16 @@ print "%s Connecting populations..." % node_id
 progress_bar = ProgressBar(width=20)
 conn = sim.FixedProbabilityConnector(pconn, rng=rng, callback=progress_bar)
 exc_syn = sim.StaticSynapse(weight=w_exc, delay=delay)
-inh_syn = sim.StaticSynapse(weight=w_inh, delay=delay)
+inh_syn = sim.StaticSynapse(weight=w_exc, delay=delay)
 
 connections={}
 connections['e2e'] = sim.Projection(exc_cells, exc_cells, null_conn, exc_syn, receptor_type='excitatory')
 connections['e2i'] = sim.Projection(exc_cells, inh_cells, null_conn, exc_syn, receptor_type='excitatory')
-connections['i2e'] = sim.Projection(inh_cells, exc_cells, full_conn, inh_syn, receptor_type='inhibitory')
+connections['i2e'] = sim.Projection(inh_cells, exc_cells, null_conn, inh_syn, receptor_type='inhibitory')
 connections['i2i'] = sim.Projection(inh_cells, inh_cells, null_conn, inh_syn, receptor_type='inhibitory')
 if (options.benchmark == "COBA"):
-    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, connector=null_conn, synapse_type=ext_syn, receptor_type='excitatory')
-    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, connector=ext_conn, synapse_type=ext_syn, receptor_type='excitatory')
+    connections['ext2e'] = sim.Projection(ext_stim, exc_cells, connector=full_conn, synapse_type=ext_syn, receptor_type='excitatory')
+    connections['ext2i'] = sim.Projection(ext_stim, inh_cells, connector=full_conn, synapse_type=ext_syn, receptor_type='excitatory')
 
 
 # === Setup recording ==========================================================
@@ -171,8 +172,8 @@ print "%s Setting up recording..." % node_id
 ext_stim.record('spikes')
 exc_cells.record('spikes')
 inh_cells.record('spikes')
-exc_cells[0, 1].record('v')
-inh_cells[0, 1].record('v')
+exc_cells.record('v')
+inh_cells.record('v')
 
 buildCPUTime = timer.diff()
 
@@ -267,6 +268,21 @@ if options.plot_figure:
         Panel(vm_inh, ylabel="Membrane potential (mV)", data_labels=["inhibitory", "inhibitory"], line_properties=[{'yticks':True}]),
         Panel(data_inh.spiketrains[0:60], xlabel="Time (ms)", xticks=True),
     ).save(filename_act)
+
+print options.weight, (vm_exc.max().base-E_leak), (vm_inh.max().base-E_leak)
+
+#for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015; do python test_range_weights.py hardware.brainscales COBA --plot-figure=hardware --weight=$w | tail -1 >> hardware.txt; done#ipython
+#for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015 0.02; do python test_range_weights.py nest COBA --plot-figure=nest --weight=$w | tail -1 >> nest.txt; done
+#python plot_range_weights.py
+#import numpy as np
+#import matplotlib.plot as plt
+#data = np.loadtxt('toto.txt')
+#plt.plot(data[:,0],data[:,1], '-o')
+#plt.plot(data[:,0],data[:,2], '-o')
+#plt.show()
+#
+#sinon, pour le plotting:
+#python plot_range_weights.py
 
 # === Finished with simulator ==================================================
 

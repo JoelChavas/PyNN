@@ -53,8 +53,8 @@ class StaticSynapse(synapses.StaticSynapse, HardwareRangeChecker):
     )
     
     parameter_ranges = {
-	'weight'     :(   0.,   0.3), # uS
-	'delay'      :(   0.,   10.), # ms
+	'weight'     :(   0.,   0.02), # uS
+	'delay'      :(   0.,   1.), # ms
 	}
     
     def __init__(self,**parameters):
