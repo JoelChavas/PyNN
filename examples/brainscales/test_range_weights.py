@@ -14,8 +14,21 @@ Usage: python VAbenchmarks.py <simulator> <benchmark>
     <simulator> is either neuron, nest, brian or pcsim
     <benchmark> is either CUBA or COBA.
 
-Andrew Davison, UNIC, CNRS
+Andrew Davison, Joel Chavas, UNIC, CNRS
 August 2006
+
+for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015; do python test_range_weights.py hardware.brainscales COBA --plot-figure=hardware --weight=$w | tail -1 >> hardware.txt; done#ipython
+for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015 0.02; do python test_range_weights.py nest COBA --plot-figure=nest --weight=$w | tail -1 >> nest.txt; done
+python plot_range_weights.py
+import numpy as np
+import matplotlib.plot as plt
+data = np.loadtxt('toto.txt')
+plt.plot(data[:,0],data[:,1], '-o')
+plt.plot(data[:,0],data[:,2], '-o')
+plt.show()
+
+sinon, pour le plotting:
+python plot_range_weights.py
 
 """
 
@@ -270,19 +283,6 @@ if options.plot_figure:
     ).save(filename_act)
 
 print options.weight, (vm_exc.max().base-E_leak), (vm_inh.max().base-E_leak)
-
-#for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015; do python test_range_weights.py hardware.brainscales COBA --plot-figure=hardware --weight=$w | tail -1 >> hardware.txt; done#ipython
-#for w in 0. 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.0035 0.004 0.0045 0.005 0.0055 0.006 0.007 0.008 0.009 0.01 0.015 0.02; do python test_range_weights.py nest COBA --plot-figure=nest --weight=$w | tail -1 >> nest.txt; done
-#python plot_range_weights.py
-#import numpy as np
-#import matplotlib.plot as plt
-#data = np.loadtxt('toto.txt')
-#plt.plot(data[:,0],data[:,1], '-o')
-#plt.plot(data[:,0],data[:,2], '-o')
-#plt.show()
-#
-#sinon, pour le plotting:
-#python plot_range_weights.py
 
 # === Finished with simulator ==================================================
 
