@@ -139,7 +139,7 @@ if options.benchmark == "COBA":
     ext_stim = sim.Population(20, sim.SpikeSourceArray(spike_times = spike_times), label="spikes")
     rconn = 0.1
     ext_conn = sim.FixedProbabilityConnector(rconn, rng=rng)
-    ext_syn = sim.StaticSynapse(weight=0.2)
+    ext_syn = sim.StaticSynapse(weight=0.02)
 
 full_conn = sim.FixedProbabilityConnector(0.9, rng=rng)
 null_conn = sim.FixedProbabilityConnector(0., rng=rng)
