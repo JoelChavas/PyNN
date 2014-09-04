@@ -1,7 +1,14 @@
 # encoding: utf-8
 
-from mock import Mock
-
+import os
+try:
+    from unittest.mock import Mock
+except ImportError:
+    from mock import Mock
+try:
+    basestring
+except NameError:
+    basestring = str
 try:
     from neuron import h
     import pyNN.neuron as sim
@@ -18,6 +25,11 @@ except ImportError:
     import unittest
 import numpy
 from numpy.testing import assert_array_equal, assert_array_almost_equal
+
+
+skip_ci = False
+if "JENKINS_SKIP_TESTS" in os.environ:
+    skip_ci = os.environ["JENKINS_SKIP_TESTS"] == "1"
 
 
 class MockCellClass(object):
@@ -242,6 +254,7 @@ class TestPopulation(unittest.TestCase):
 
 
 @unittest.skipUnless(sim, "Requires NEURON")
+@unittest.skipIf(skip_ci, "Skipping test on CI server")
 class TestID(unittest.TestCase):
 
     def setUp(self):

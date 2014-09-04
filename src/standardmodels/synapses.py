@@ -17,6 +17,10 @@ Classes for defining STDP rules:
 :license: CeCILL, see LICENSE for details.
 """
 
+try:
+    long
+except NameError:
+    long = int
 from pyNN import descriptions
 from pyNN.standardmodels import StandardSynapseType, STDPWeightDependence, STDPTimingDependence
 from pyNN.parameters import ParameterSpace
@@ -58,8 +62,6 @@ class TsodyksMarkramSynapse(StandardSynapseType):
             depression time constant (ms).
         `tau_facil`:
             facilitation time constant (ms).
-        `u0`, `x0`, `y0`:
-            initial conditions.
     
     .. _`Tsodyks, Uziel and Markram (2000)`: http://www.jneurosci.org/content/20/1/RC50.long
     """
@@ -69,9 +71,6 @@ class TsodyksMarkramSynapse(StandardSynapseType):
         'U': 0.5,   # use parameter
         'tau_rec': 100.0, # depression time constant (ms)
         'tau_facil': 0.0,   # facilitation time constant (ms)
-        'u0': 0.0,  # }
-        'x0': 1.0,  # } initial values
-        'y0': 0.0   # }
     }
 
 

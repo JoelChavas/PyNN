@@ -13,6 +13,12 @@ import os
 import logging
 import operator
 import tempfile
+try:
+    basestring
+    reduce
+except NameError:
+    basestring = str
+    from functools import reduce
 from pyNN import random, recording, errors, standardmodels, core, space, descriptions
 from pyNN.models import BaseCellType
 from pyNN.parameters import ParameterSpace, LazyArray
@@ -47,17 +53,14 @@ class IDMixin(object):
     # (e.g., int or long) and from IDMixin.
 
     def __getattr__(self, name):
+        if name == "parent":
+            raise Exception("parent is not set")
         try:
-            val = self.__getattribute__(name)
-        except AttributeError:
-            if name == "parent":
-                raise Exception("parent is not set")
-            try:
-                val = self.get_parameters()[name]
-            except KeyError:
-                raise errors.NonExistentParameterError(name,
-                                                       self.celltype.__class__.__name__,
-                                                       self.celltype.get_parameter_names())
+            val = self.get_parameters()[name]
+        except KeyError:
+            raise errors.NonExistentParameterError(name,
+                                                   self.celltype.__class__.__name__,
+                                                   self.celltype.get_parameter_names())
         return val
 
     def __setattr__(self, name, value):
@@ -153,7 +156,7 @@ class BasePopulation(object):
             p[2] is equivalent to p.__getitem__(2).
             p[3:6] is equivalent to p.__getitem__(slice(3, 6))
         """
-        if isinstance(index, int):
+        if isinstance(index, (int, numpy.integer)):
             return self.all_cells[index]
         elif isinstance(index, (slice, list, numpy.ndarray)):
             return self._get_view(index)
@@ -388,6 +391,9 @@ class BasePopulation(object):
             self._set_initial_value_array(variable, initial_value)
             self.initial_values[variable] = initial_value
 
+    def find_units(self, variable):
+        return self.celltype.units[variable]
+
     def can_record(self, variable):
         """Determine whether `variable` can be recorded from this population."""
         return self.celltype.can_record(variable)
@@ -458,7 +464,8 @@ class BasePopulation(object):
         file as metadata.
         """
         logger.debug("Population %s is writing %s to %s [gather=%s, clear=%s]" % (self.label, variables, io, gather, clear))
-        self.recorder.write(variables, io, gather, self._record_filter, annotations=annotations)
+        self.recorder.write(variables, io, gather, self._record_filter, clear=clear, 
+                            annotations=annotations)
 
     def get_data(self, variables='all', gather=True, clear=False):
         """
@@ -504,8 +511,11 @@ class BasePopulation(object):
 
     def get_spike_counts(self, gather=True):
         """
-        Returns the number of spikes for each neuron.
+        Returns a dict containing the number of spikes for each neuron.
+        
+        The dict keys are neuron IDs, not indices.
         """
+        # arguably, we should use indices
         return self.recorder.count('spikes', gather, self._record_filter)
 
     @deprecated("mean_spike_count()")
@@ -621,6 +631,7 @@ class Population(BasePopulation):
         else:
             raise TypeError("cellclass must be an instance or subclass of BaseCellType, not a %s" % type(cellclass))
         self.annotations = {}
+        self.recorder = self._recorder_class(self)
         # Build the arrays of cell ids
         # Cells on the local node are represented as ID objects, other cells by integers
         # All are stored in a single numpy array for easy lookup by address
@@ -632,7 +643,6 @@ class Population(BasePopulation):
         all_initial_values = self.celltype.default_initial_values.copy()
         all_initial_values.update(initial_values)
         self.initialize(**all_initial_values)
-        self.recorder = self._recorder_class(self)
         Population._nPop += 1
 
     def __repr__(self):
@@ -652,17 +662,30 @@ class Population(BasePopulation):
 
             >>> assert p.id_to_index(p[5]) == 5
         """
-        if not numpy.iterable(id):
-            if not self.first_id <= id <= self.last_id:
-                raise ValueError("id should be in the range [%d,%d], actually %d" % (self.first_id, self.last_id, id))
-            return int(id - self.first_id)  # this assumes ids are consecutive
+        if self.first_id <= self.last_id:
+            if not numpy.iterable(id):
+                if not self.first_id <= id <= self.last_id:
+                    raise ValueError("id should be in the range [%d,%d], actually %d" % (self.first_id, self.last_id, id))
+                return int(id - self.first_id)  # this assumes ids are consecutive
+            else:
+                if isinstance(id, PopulationView):
+                    id = id.all_cells
+                id = numpy.array(id)
+                if (self.first_id > id.min()) or (self.last_id < id.max()):
+                    raise ValueError("ids should be in the range [%d,%d], actually [%d, %d]" % (self.first_id, self.last_id, id.min(), id.max()))
+                return (id - self.first_id).astype(numpy.int)  # this assumes ids are consecutive
         else:
-            if isinstance(id, PopulationView):
-                id = id.all_cells
-            id = numpy.array(id)
-            if (self.first_id > id.min()) or (self.last_id < id.max()):
-                raise ValueError("ids should be in the range [%d,%d], actually [%d, %d]" % (self.first_id, self.last_id, id.min(), id.max()))
-            return (id - self.first_id).astype(numpy.int)  # this assumes ids are consecutive
+            if not numpy.iterable(id):
+                if not self.first_id >= id >= self.last_id:
+                    raise ValueError("id should be in the range [%d,%d], actually %d" % (self.last_id, self.first_id, id))
+                return int(self.first_id-id)  # this assumes ids are consecutive
+            else:
+                if isinstance(id, PopulationView):
+                    id = id.all_cells
+                id = numpy.array(id)
+                if (self.first_id < id.min()) or (self.last_id > id.max()):
+                    raise ValueError("ids should be in the range [%d,%d], actually [%d, %d]" % (self.last_id, self.first_id, id.min(), id.max()))
+                return (self.first_id-id).astype(numpy.int)  # this assumes ids are consecutive
 
     def id_to_local_index(self, id):
         """
@@ -682,7 +705,7 @@ class Population(BasePopulation):
 
     def _set_structure(self, structure):
         assert isinstance(structure, space.BaseStructure)
-        if structure != self._structure:
+        if self._structure is None or structure != self._structure:
             self._positions = None  # setting a new structure invalidates previously calculated positions
             self._structure = structure
     structure = property(fget=_get_structure, fset=_set_structure)
@@ -903,7 +926,7 @@ class Assembly(object):
         Create an Assembly of Populations and/or PopulationViews.
         """
         if kwargs:
-            assert kwargs.keys() == ['label']
+            assert list(kwargs.keys()) == ['label']
         self.populations = []
         for p in populations:
             self._insert(p)
@@ -983,6 +1006,12 @@ class Assembly(object):
             for p in self.populations[1:]:
                 rts = rts.intersection(set(p.celltype.receptor_types))
         return rts
+
+    def find_units(self, variable):
+        units = set(p.find_units(variable) for p in self.populations)
+        if len(units) > 1:
+            raise ValueError("Inconsistent units")
+        return units
 
     @property
     def _mask_local(self):
@@ -1068,7 +1097,7 @@ class Assembly(object):
             boundaries.append(count)
         boundaries = numpy.array(boundaries, dtype=numpy.int)
 
-        if isinstance(index, int): # return an ID
+        if isinstance(index, (int, numpy.integer)): # return an ID
             pindex = boundaries[1:].searchsorted(index, side='right')
             return self.populations[pindex][index-boundaries[pindex]]
         elif isinstance(index, (slice, tuple, list, numpy.ndarray)):

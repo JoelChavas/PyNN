@@ -78,7 +78,7 @@ We try to stay fairly close to PEP8_. Please note in particular:
     - some function/method names in PyNN use ``mixedCase``, but these will
       gradually be deprecated and replaced with ``lower_case_with_underscores``.
       Any new functions or methods should use the latter.
-    - we currently target versions 2.6 to 2.7.
+    - we currently target versions 2.6, 2.7 and 3.4
 
 
 Testing
@@ -175,7 +175,7 @@ last time:
       :file:`test/unittests` and :file:`test/system` and running :command:`make doctest` in
       :file:`doc`. You should do this on at least two Linux systems -- one a very
       recent version and one at least a year old, and on at least one version of
-      Mac OS X. You should also do this with Python 2.6 and 2.7.
+      Mac OS X. You should also do this with Python 2.6, 2.7 and 3.4.
     * do all the example scripts generate the correct output? Run the
       :file:`run_all_examples.py` script in :file:`examples/tools` and then visually
       check the :file:`.png` files generated in :file:`examples/tools/Results`. Again,
@@ -190,22 +190,28 @@ Once you've confirmed all the above, create a source package using::
 
     $ python setup.py sdist
 
-and check that it installs properly.
+and check that it installs properly (you will find it in the :file:`dist`
+subdirectory.
 
 Now you should commit any changes, then tag with the release number as follows::
 
     $ git tag x.y.z
 
 where ``x.y.z`` is the release number. You should now upload the documentation
-to http://neuralensemble.org/docs/PyNN/.
+to http://neuralensemble.org/docs/PyNN/ by running::
 
-.. todo:: more details on this
+    $ make zip
+    
+in the :file:`doc` directory, and then unpacking the resulting archive on the
+NeuralEnsemble server.
 
 If this is a development release (i.e. an *alpha* or *beta*), the final step is
-to upload the source package to the INCF Software Center [more instructions needed here].
+to upload the source package to the INCF Software Center.
 Do **not** upload development releases to PyPI.
 
-.. todo:: more details on this
+To upload a package to the INCF Software Center, log-in, and then go to the
+Contents_ tab. Click on "Add new..." then "File", then fill in the form and
+upload the source package.
 
 If this is a final release, there are a few more steps:
 
@@ -241,3 +247,4 @@ If this is a final release, there are a few more steps:
 .. _`issue tracker`: https://neuralensemble.org/trac/PyNN
 .. _fork: https://github.com/NeuralEnsemble/PyNN/fork
 .. _`PyNN repository`: https://github.com/NeuralEnsemble/PyNN/
+.. _contents: http://software.incf.org/software/pynn/pynn/folder_contents

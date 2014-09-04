@@ -1,6 +1,6 @@
 from nose.plugins.skip import SkipTest
-from scenarios import scenarios
-from nose.tools import assert_equal
+from .scenarios.registry import registry
+from nose.tools import assert_equal, assert_not_equal
 from pyNN.utility import init_logging, assert_arrays_equal
 import numpy
 
@@ -10,8 +10,9 @@ try:
 except ImportError:
     have_nest = False
 
+
 def test_scenarios():
-    for scenario in scenarios:
+    for scenario in registry:
         if "nest" not in scenario.exclude:
             scenario.description = scenario.__name__
             if have_nest:
@@ -35,9 +36,9 @@ def test_record_native_model():
     p1.set(Theta_eq=-51.5)
     #assert_arrays_equal(p1.get('Theta_eq'), -51.5*numpy.ones((10,)))
     assert_equal(p1.get('Theta_eq'), -51.5)
-    print p1.get('Tau_m')
-    p1.set(Tau_m=RandomDistribution('uniform', [15.0, 20.0]))
-    print p1.get('Tau_m')
+    print(p1.get('Tau_m'))
+    p1.set(Tau_m=RandomDistribution('uniform', low=15.0, high=20.0))
+    print(p1.get('Tau_m'))
 
     current_source = nest.StepCurrentSource(times=[50.0, 110.0, 150.0, 210.0],
                                             amplitudes=[0.01, 0.02, -0.02, 0.01])
@@ -45,7 +46,7 @@ def test_record_native_model():
 
     p2 = nest.Population(1, nest.native_cell_type("poisson_generator")(rate=200.0))
 
-    print "Setting up recording"
+    print("Setting up recording")
     p2.record('spikes')
     p1.record('V_m')
 
@@ -131,3 +132,18 @@ def test_issue237():
     exc_noise_connector = sim.OneToOneConnector()
     noise_ee_prj = sim.Projection(exc_noise_in_exc, exc_cells, exc_noise_connector, receptor_type="excitatory")
     noise_ee_prj.set(weight=1e-3)
+
+def test_random_seeds():
+    sim = pyNN.nest
+    data = []
+    for seed in (854947309, 470924491):
+        sim.setup(threads=1, rng_seeds=[seed])
+        p = sim.Population(3, sim.SpikeSourcePoisson(rate=100.0))
+        p.record('spikes')
+        sim.run(100)
+        data.append(p.get_data().segments[0].spiketrains)
+    assert_not_equal(*data)
+
+
+if __name__ == '__main__':
+    data = test_random_seeds()

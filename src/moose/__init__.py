@@ -49,7 +49,8 @@ def end(compatible_output=True):
     shutil.rmtree(temporary_directory, ignore_errors=True)
     moose.PyMooseBase.endSimulation()
 
-run = common.build_run(simulator)
+run, run_until = common.build_run(simulator)
+run_for = run
 
 reset = common.build_reset(simulator)
 
@@ -103,7 +104,7 @@ class Population(common.Population):
         if isinstance(cellclass, type) and issubclass(cellclass, standardmodels.StandardCellType):
             celltype = cellclass(cellparams)
         else:
-            print cellclass
+            print(cellclass)
             raise Exception("Only standard cells currently supported.")
         self.first_id = simulator.state.gid_counter
         self.last_id = simulator.state.gid_counter + n - 1

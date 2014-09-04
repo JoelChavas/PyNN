@@ -19,6 +19,10 @@ from pyNN.parameters import ParameterSpace, Sequence
 from pyNN.neuron import simulator
 
 
+_current_sources = []  # if a CurrentSource is created but not assigned to a variable,
+                       # it will not persist, so we store a reference here
+
+
 class NeuronCurrentSource(StandardCurrentSource):
     """Base class for a source of current to be injected into a neuron."""
 
@@ -34,6 +38,7 @@ class NeuronCurrentSource(StandardCurrentSource):
         parameter_space.update(**parameters)
         parameter_space = self.translate(parameter_space)
         self.set_native_parameters(parameter_space)
+        _current_sources.append(self)
 
     @property
     def _h_amplitudes(self):
@@ -90,7 +95,7 @@ class NeuronCurrentSource(StandardCurrentSource):
             if id.local:
                 if not id.celltype.injectable:
                     raise TypeError("Can't inject current into a spike source.")
-                if not self._h_iclamps.has_key(id):
+                if not (id in self._h_iclamps):
                     self.cell_list += [id]
                     self._h_iclamps[id] = h.IClamp(0.5, sec=id._cell.source_section)
                     self._devices.append(self._h_iclamps[id])
