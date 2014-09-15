@@ -34,6 +34,9 @@ class HardwareTest(unittest.TestCase):
             }
         sim.setup(**extra)
 
+    def runTest():
+        pass
+    
     def test_IF_cond_exp_default_values(self):
         ifcell  = sim.IF_cond_exp()
         
@@ -58,6 +61,27 @@ class HardwareTest(unittest.TestCase):
             Panel(weights,data_labels=["ext->cell"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
             Panel(vm, ylabel="Membrane potential (mV)", data_labels=["excitatory", "excitatory"], line_properties=[{'xticks': True, 'yticks':True}]),
         ).save("result")
+        
+    def test_SpikeSourceArray_using_set_parameters(self):
+        spike_times = [40.]
+        p = sim.Population(3, sim.SpikeSourceArray())
+        for i in xrange(2):
+            p[i].set_parameters(spike_times=spike_times)
+        p2  = sim.Population(3, sim.Hardware_IF_cond_exp())
+        syn = sim.StaticSynapse(weight=0.012)
+        con = sim.Projection(p, p2, connector = sim.OneToOneConnector(), synapse_type=syn,receptor_type='excitatory')
+        spike_times_g = p.get('spike_times')
+        p2.record('v')
+        sim.run(100.0)
+        weights = nan_to_num(con.get('weight', format="array"))
+        print weights
+        data = p2.get_data().segments[0]
+        vm = data.filter(name="v")[0]
+        print vm
+        Figure(
+            Panel(weights,data_labels=["ext->cell"], line_properties=[{'xticks':True, 'yticks':True, 'cmap':'Greys'}]),
+            Panel(vm, ylabel="Membrane potential (mV)", data_labels=["excitatory", "excitatory"], line_properties=[{'xticks': True, 'yticks':True}]),
+        ).save("result2")
 
         
     #def test_set_parameters(self):
@@ -131,5 +155,9 @@ if __name__ == '__main__':
     #test_scenarios()
     #test_restart_loop()
     #test_sim_without_clearing()
-    test_sim_without_setup()
+    #test_sim_without_setup()
     #test_several_runs()
+    h = HardwareTest()
+    h.setUp()
+    h.test_SpikeSourceArray_using_set_parameters()
+    h.tearDown()

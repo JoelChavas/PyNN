@@ -190,7 +190,7 @@ class Recorder(object):
         Add the cells in `ids` to the sets of recorded cells for the given variables.
         """
         logger.debug('Recorder.record(<%d cells>)' % len(ids))
-        if sampling_interval != 1.0 and len(self.recorded) > 0:
+        if sampling_interval != self.sampling_interval and len(self.recorded) > 1:
             raise Exception("All neurons in a population must be recorded with the same sampling interval.")
         ids = set([id for id in ids if id.local])
         for variable in normalize_variables_arg(variables):
