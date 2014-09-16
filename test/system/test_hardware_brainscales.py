@@ -136,12 +136,12 @@ def test_restart_loop():
     sim.run(10.0)
     sim.end()
     
-#def test_several_runs():
-    #extra = {'loglevel':0, 'useSystemSim': True, 'hardware': sim.hardwareSetup['one-hicann']}
-    #sim.setup(**extra)
-    #sim.run(10.0)
-    #sim.run(10.0)
-    #sim.end()
+def test_several_runs():
+    extra = {'loglevel':0, 'useSystemSim': True, 'hardware': sim.hardwareSetup['one-hicann']}
+    sim.setup(**extra)
+    sim.run(10.0)
+    sim.run(10.0)
+    sim.end()
 
 def test_sim_without_clearing():
     extra = {'loglevel':0, 'useSystemSim': True, 'hardware': sim.hardwareSetup['one-hicann']}
@@ -157,7 +157,10 @@ if __name__ == '__main__':
     #test_sim_without_clearing()
     #test_sim_without_setup()
     #test_several_runs()
+    
     h = HardwareTest()
     h.setUp()
-    h.test_SpikeSourceArray_using_set_parameters()
+    h.test_SpikeSourceArray()
+    #h.test_SpikeSourceArray_using_set_parameters()
     h.tearDown()
+    
