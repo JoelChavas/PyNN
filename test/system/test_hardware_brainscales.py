@@ -156,11 +156,11 @@ if __name__ == '__main__':
     #test_restart_loop()
     #test_sim_without_clearing()
     #test_sim_without_setup()
-    #test_several_runs()
+    test_several_runs()
     
-    h = HardwareTest()
-    h.setUp()
-    h.test_SpikeSourceArray()
-    #h.test_SpikeSourceArray_using_set_parameters()
-    h.tearDown()
+    #h = HardwareTest()
+    #h.setUp()
+    #h.test_SpikeSourceArray()
+    ##h.test_SpikeSourceArray_using_set_parameters()
+    #h.tearDown()
     
